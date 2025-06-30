@@ -68,7 +68,7 @@ async def run_prompt(data: PromptRequest):
         logging.error(f"OpenAI error: {str(e)}")
         return {
             "error": str(e),
-            "html": "<div style='color:red'>Fout bij AI-aanroep</div>",
+            "html": f"<div style='color:red'>Fout bij AI-aanroep: {str(e)}</div>",
             "supabase_instructions": "",
             "version_timestamp": datetime.utcnow().isoformat(),
         }
