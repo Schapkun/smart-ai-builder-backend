@@ -1,11 +1,37 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import openai
+import os
+from datetime import datetime
+import json
 import logging
 
-# Zet logging aan
 logging.basicConfig(level=logging.INFO)
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class PromptRequest(BaseModel):
+    prompt: str
+
+def extract_between(text, start_tag, end_tag):
+    try:
+        return text.split(start_tag)[1].split(end_tag)[0].strip()
+    except:
+        return ""
 
 @app.post("/prompt")
 async def run_prompt(data: PromptRequest):
     openai.api_key = os.getenv("OPENAI_API_KEY")
+
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
@@ -23,7 +49,6 @@ async def run_prompt(data: PromptRequest):
 
         ai_output = response.choices[0].message.content
 
-        import json
         try:
             ai_json = json.loads(ai_output)
             html = ai_json.get("html", "<div>Geen HTML ontvangen</div>")
