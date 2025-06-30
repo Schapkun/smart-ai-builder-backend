@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import openai
-import os
 from datetime import datetime
+import os
 import json
 import logging
+
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,6 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+client = OpenAI()
+
 class PromptRequest(BaseModel):
     prompt: str
 
@@ -30,11 +33,9 @@ def extract_between(text, start_tag, end_tag):
 
 @app.post("/prompt")
 async def run_prompt(data: PromptRequest):
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -43,7 +44,7 @@ async def run_prompt(data: PromptRequest):
                         "op basis van natuurlijke taal. Geef output als JSON met: html, supabase_instructions."
                     )
                 },
-                {"role": "user", "content": data.prompt}
+                {"role": "user", "content": data.prompt},
             ],
         )
 
