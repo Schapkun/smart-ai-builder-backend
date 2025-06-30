@@ -40,8 +40,12 @@ async def run_prompt(data: PromptRequest):
                 {
                     "role": "system",
                     "content": (
-                        "Je genereert HTML/JS wijzigingen en Supabase database-aanpassingen "
-                        "op basis van natuurlijke taal. Geef output als JSON met: html, supabase_instructions."
+                        "Je bent een expert frontend developer en Supabase specialist. "
+                        "Je genereert altijd een JSON-object met twee velden: "
+                        "`html` en `supabase_instructions`. "
+                        "Het veld `html` bevat volledige, geldige HTML-code die gebruikt kan worden als frontend output. "
+                        "Het veld `supabase_instructions` bevat de benodigde Supabase database-aanpassingen in tekstvorm. "
+                        "Antwoord alleen met de JSON-string, zonder enige extra tekst."
                     )
                 },
                 {"role": "user", "content": data.prompt},
@@ -49,7 +53,7 @@ async def run_prompt(data: PromptRequest):
         )
 
         ai_output = response.choices[0].message.content
-        print("AI output:", ai_output)  # <-- Hier loggen we de AI output
+        print("AI output:", ai_output)  # Log AI output voor debugging
 
         try:
             ai_json = json.loads(ai_output)
