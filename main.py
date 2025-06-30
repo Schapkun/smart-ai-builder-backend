@@ -49,6 +49,7 @@ async def run_prompt(data: PromptRequest):
         )
 
         ai_output = response.choices[0].message.content
+        print("AI output:", ai_output)  # <-- Hier loggen we de AI output
 
         try:
             ai_json = json.loads(ai_output)
