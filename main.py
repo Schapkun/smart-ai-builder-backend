@@ -1,41 +1,41 @@
+# ✅ BACKEND: main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
-from openai import OpenAI  # ✅ Alleen deze import gebruiken
+import openai
+from openai import OpenAI
+import supabase
 
 app = FastAPI()
 
-# CORS voor frontend toegang
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Vervang door frontend domein in productie
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# OpenAI client instellen
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+supabase_client = supabase.create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_ROLE")
+)
 
 class PromptRequest(BaseModel):
     prompt: str
 
-class ExecuteRequest(BaseModel):
-    instructions: str
+class PublishRequest(BaseModel):
+    timestamp: str
 
-current_html = """
+current_html_live = """
 <!DOCTYPE html>
 <html>
 <head>
   <title>Meester.app</title>
-  <style>
-    footer {
-      color: gray;
-      font-size: 12px;
-      padding: 20px;
-    }
-  </style>
 </head>
 <body>
   <div id="main">Welkom bij Meester.app</div>
@@ -51,7 +51,7 @@ Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
 
 Huidige HTML:
-{current_html}
+{current_html_live}
 
 Gebruikersverzoek:
 {req.prompt}
@@ -59,20 +59,31 @@ Gebruikersverzoek:
 Aangepaste HTML:
 """
 
-    response = client.chat.completions.create(
+    completion = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
 
-    html = response.choices[0].message.content.strip()
+    html = completion.choices[0].message.content.strip()
+
+    timestamp = str(os.times().elapsed)
+
+    supabase_client.table("versions").insert({
+        "prompt": req.prompt,
+        "html_preview": html,
+        "timestamp": timestamp
+    }).execute()
 
     return {
-        "html": html,
-        "supabase_instructions": "",
-        "version_timestamp": str(os.times().elapsed),
+        "html_preview": html,
+        "timestamp": timestamp
     }
 
-@app.post("/execute-supabase")
-async def execute_supabase(req: ExecuteRequest):
-    return {"message": "Supabase instructies uitgevoerd (simulatie)"}
+@app.post("/publish")
+async def publish_html(req: PublishRequest):
+    row = supabase_client.table("versions").select("html_preview").eq("timestamp", req.timestamp).single().execute()
+    html = row.data.get("html_preview")
+    
+    supabase_client.table("versions").update({"html_live": html}).eq("timestamp", req.timestamp).execute()
+    return {"message": "Live-versie bijgewerkt."}
