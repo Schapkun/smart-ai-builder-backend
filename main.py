@@ -83,3 +83,16 @@ async def run_prompt(data: PromptRequest):
             "supabase_instructions": "",
             "version_timestamp": datetime.utcnow().isoformat(),
         }
+
+# ✅ Nieuw toegevoegd endpoint:
+@app.post("/execute-supabase")
+async def execute_supabase(data: SupabaseInstructionRequest):
+    try:
+        instructions = data.instructions
+        logging.info(f"Supabase instructie ontvangen: {instructions}")
+
+        # (toekomst) hier kun je parsing en uitvoering toevoegen
+        return {"message": "Instructies ontvangen en gelogd."}
+    except Exception as e:
+        logging.error(f"Fout bij supabase-instructie: {str(e)}")
+        return {"message": "Fout bij uitvoeren", "error": str(e)}
