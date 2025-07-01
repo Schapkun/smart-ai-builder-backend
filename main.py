@@ -1,42 +1,51 @@
 from fastapi import FastAPI, Request
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import openai
 import os
-from datetime import datetime
 
 app = FastAPI()
 
-# CORS
+# CORS voor frontend toegang
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Pas aan naar je frontend domein voor productie
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# OpenAI Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# In-memory HTML (optioneel later vervangen door DB)
-current_html = """<div class='content'>
-  <footer style='text-align: left;'>Meester.app v1.0</footer>
-</div>"""
-
-# Prompt input
 class PromptRequest(BaseModel):
     prompt: str
 
-# Execute Supabase-instructies (voor later)
-class SupabaseRequest(BaseModel):
+class ExecuteRequest(BaseModel):
     instructions: str
 
-@app.post("/prompt")
-async def process_prompt(req: PromptRequest):
-    global current_html
+# Dummy HTML om te starten — je kunt dit vervangen door live project HTML laden
+current_html = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Meester.app</title>
+  <style>
+    footer {
+      color: gray;
+      font-size: 12px;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="main">Welkom bij Meester.app</div>
+  <footer>Meester.app v1.0</footer>
+</body>
+</html>
+"""
 
-    # Prompt voor AI om HTML aan te passen
+@app.post("/prompt")
+async def handle_prompt(req: PromptRequest):
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
@@ -45,33 +54,26 @@ Huidige HTML:
 {current_html}
 
 Gebruikersverzoek:
-"""{req.prompt}"""
+{req.prompt}
 
 Aangepaste HTML:
 """
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",  # evt. gpt-4o
-        messages=[
-            {"role": "system", "content": "Je bent een AI die bestaande HTML aanpast. Geef alleen volledige geldige HTML terug."},
-            {"role": "user", "content": ai_prompt},
-        ],
-        temperature=0.2,
+    completion = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": ai_prompt}],
+        temperature=0
     )
 
-    new_html = response.choices[0].message.content.strip()
-    current_html = new_html  # update globale html
+    html = completion.choices[0].message["content"].strip()
 
     return {
-        "html": new_html,
-        "supabase_instructions": "",  # optioneel leeg
-        "version_timestamp": datetime.utcnow().isoformat()
+        "html": html,
+        "supabase_instructions": "",
+        "version_timestamp": str(os.times().elapsed),
     }
 
 @app.post("/execute-supabase")
-async def execute_supabase(req: SupabaseRequest):
-    return {"message": "Geen supabase-acties nodig voor deze prompt."}
-
-@app.get("/")
-def root():
-    return {"message": "AI HTML builder draait"}
+async def execute_supabase(req: ExecuteRequest):
+    # Dummy endpoint voor nu
+    return {"message": "Supabase instructies uitgevoerd (simulatie)"}
