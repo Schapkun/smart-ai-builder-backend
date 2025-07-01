@@ -1,5 +1,3 @@
-# File: main.py
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,13 +5,11 @@ from openai import OpenAI
 from supabase import create_client
 from datetime import datetime, timezone
 import os
-import sys
 import json
+import sys
 
-# ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
 
-# ─── 2) CORS Middleware ─────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -25,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── 3) Environment ─────────────────────────────────────────────────────
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_key   = os.getenv("OPENAI_API_KEY")
@@ -41,14 +36,11 @@ openai   = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
-# ─── 4) Models ──────────────────────────────────────────────────────────
 class PromptRequest(BaseModel):
     prompt: str
 
 class PublishRequest(BaseModel):
     version_id: str
-
-# ─── 5) Routes ──────────────────────────────────────────────────────────
 
 @app.get("/env")
 async def get_env():
@@ -95,27 +87,20 @@ Aangepaste HTML:
         html = completion.choices[0].message.content.strip()
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        instructions = {
-            "modification_summary": f"HTML aangepast op basis van prompt: '{req.prompt}'",
-            "generated_by": "AI v1",
-        }
-
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
             "html_live": current_html,
             "timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
         }).execute()
 
         return {
             "html": html,
             "version_timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
         }
 
     except Exception as e:
-        print("❌ ERROR in /prompt:", str(e), file=sys.stderr)
+        print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return {"error": "Interne fout bij verwerken prompt."}
 
 @app.post("/publish")
@@ -138,5 +123,5 @@ async def publish_version(req: PublishRequest):
         return {"message": "Live versie succesvol gepubliceerd."}
 
     except Exception as e:
-        print("❌ ERROR in /publish:", str(e), file=sys.stderr)
+        print("❌ ERROR in /publish route:", str(e), file=sys.stderr)
         return {"error": "Publicatie mislukt"}
