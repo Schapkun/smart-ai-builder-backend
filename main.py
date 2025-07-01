@@ -36,6 +36,15 @@ class PromptRequest(BaseModel):
 class PublishRequest(BaseModel):
     version_id: str
 
+# Nieuw test-endpoint om de environment variables via HTTP te checken
+@app.get("/env")
+async def get_env():
+    return {
+        "SUPABASE_URL": supabase_url,
+        "SUPABASE_SERVICE_ROLE": supabase_key,
+        "OPENAI_API_KEY": (openai_api_key[:5] + "...") if openai_api_key else None
+    }
+
 # Endpoint om prompt te verwerken
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
