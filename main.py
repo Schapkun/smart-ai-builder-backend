@@ -1,62 +1,64 @@
-from fastapi import FastAPI
+# main.py (BACKEND)
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+import sys
 from openai import OpenAI
 from supabase import create_client
-import sys
 
 app = FastAPI()
 
-# CORS middleware: staat ALLES toe (voor debug, niet voor productie!)
+# --- 1) CORS INSTELLINGEN (sta alle origins toe voor debug) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Laat alle origins toe
+    allow_origins=["*"],         # voor productie hier je frontend-domein invullen
     allow_credentials=True,
-    allow_methods=["*"],  # Laat alle HTTP methoden toe
-    allow_headers=["*"],  # Laat alle headers toe
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Environment variables ophalen
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-openai_api_key = os.getenv("OPENAI_API_KEY")
+# --- 2) ENVIRONMENT VARIABLES OPHALEN ---
+SUPABASE_URL           = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE  = os.getenv("SUPABASE_SERVICE_ROLE")
+OPENAI_API_KEY         = os.getenv("OPENAI_API_KEY")
 
-# Debug info naar logs sturen
-print("DEBUG - SUPABASE_URL:", supabase_url, file=sys.stderr)
-print("DEBUG - SUPABASE_SERVICE_ROLE:", supabase_key, file=sys.stderr)
-print("DEBUG - OPENAI_API_KEY:", (openai_api_key[:5] + "...") if openai_api_key else None, file=sys.stderr)
+# Debug-print in de Render-logs:
+print("🔧 SUPABASE_URL:",          SUPABASE_URL,          file=sys.stderr)
+print("🔧 SUPABASE_SERVICE_ROLE:", SUPABASE_SERVICE_ROLE, file=sys.stderr)
+print("🔧 OPENAI_API_KEY:",        (OPENAI_API_KEY[:5] + "...") if OPENAI_API_KEY else None, file=sys.stderr)
 
-# Check of keys bestaan
-if not supabase_url or not supabase_key:
-    raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
-if not openai_api_key:
-    raise Exception("OpenAI API key moet als environment variable gezet zijn.")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE:
+    raise Exception("Supabase URL + SERVICE_ROLE missen als environment variables.")
+if not OPENAI_API_KEY:
+    raise Exception("OpenAI API key ontbreekt als environment variable.")
 
-# Clients aanmaken
-supabase = create_client(supabase_url, supabase_key)
-client = OpenAI(api_key=openai_api_key)
+# --- 3) CLIENTS AANMAKEN ---
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
+openai  = OpenAI(api_key=OPENAI_API_KEY)
 
-# Data models
+# --- 4) DATA MODELS ---
 class PromptRequest(BaseModel):
     prompt: str
 
 class PublishRequest(BaseModel):
     version_id: str
 
-# Endpoint om environment variables te checken
-@app.get("/env")
-async def get_env():
-    return {
-        "SUPABASE_URL": supabase_url,
-        "SUPABASE_SERVICE_ROLE": supabase_key,
-        "OPENAI_API_KEY": (openai_api_key[:5] + "...") if openai_api_key else None,
-    }
+# --- 5) TEST-ENDPOINT (root) ---
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
 
-# Endpoint om prompt te verwerken
+# --- 6) /prompt ENDPOINT ---
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
-    result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
+    # Haal de laatst gepubliceerde HTML op
+    result = supabase.table("versions") \
+                     .select("html_live") \
+                     .order("timestamp", desc=True) \
+                     .limit(1) \
+                     .execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
     <html>
@@ -64,9 +66,11 @@ async def handle_prompt(req: PromptRequest):
     <body><div id='main'>Welkom bij Meester.app</div></body>
     </html>
     """
+
+    # Stel de prompt samen voor de AI
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
-Geef alleen de volledige aangepaste HTML terug.
+Geef alleen de volledige aangepaste HTML terug, zonder extra toelichting.
 
 Huidige HTML:
 {current_html}
@@ -76,14 +80,20 @@ Gebruikersverzoek:
 
 Aangepaste HTML:
 """
-    completion = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": ai_prompt}],
-        temperature=0,
-    )
+    # Roep OpenAI aan
+    try:
+        completion = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": ai_prompt}],
+            temperature=0
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI-fout: {e}")
+
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
+    # Sla alleen de preview op; de live-versie blijft ongewijzigd
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
@@ -96,15 +106,24 @@ Aangepaste HTML:
         "version_timestamp": timestamp,
     }
 
-# Endpoint om preview te publiceren als live
+# --- 7) /publish ENDPOINT ---
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
-    version = supabase.table("versions").select("html_preview").eq("id", req.version_id).single().execute()
+    # Zoek de preview-versie op
+    version = supabase.table("versions") \
+                      .select("html_preview") \
+                      .eq("id", req.version_id) \
+                      .single() \
+                      .execute()
     if not version.data:
-        return {"error": "Versie niet gevonden"}
+        raise HTTPException(status_code=404, detail="Versie niet gevonden")
 
     html_to_publish = version.data["html_preview"]
 
-    supabase.table("versions").update({"html_live": html_to_publish}).eq("id", req.version_id).execute()
+    # Update de live-kolom naar de geselecteerde preview
+    supabase.table("versions") \
+            .update({"html_live": html_to_publish}) \
+            .eq("id", req.version_id) \
+            .execute()
 
     return {"message": "Live versie bijgewerkt."}
