@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import os
 from openai import OpenAI
@@ -8,18 +9,16 @@ import sys
 
 app = FastAPI()
 
-# CORS middleware, frontend URL toestaan, methoden expliciet vermelden
+# CORS middleware - direct na app instantie
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://smart-ai-builder-frontend.onrender.com"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=600,
 )
 
-# Environment variables
+# Lees environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -30,6 +29,7 @@ print("DEBUG - OPENAI_API_KEY:", (openai_api_key[:5] + "...") if openai_api_key 
 
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
+
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
@@ -42,13 +42,15 @@ class PromptRequest(BaseModel):
 class PublishRequest(BaseModel):
     version_id: str
 
-@app.get("/env")
-async def get_env():
-    return {
-        "SUPABASE_URL": supabase_url,
-        "SUPABASE_SERVICE_ROLE": supabase_key,
-        "OPENAI_API_KEY": (openai_api_key[:5] + "...") if openai_api_key else None
-    }
+# Optie om preflight requests te accepteren
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return Response(headers={
+        "Access-Control-Allow-Origin": "https://smart-ai-builder-frontend.onrender.com",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE, PATCH",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+    })
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
@@ -60,6 +62,7 @@ async def handle_prompt(req: PromptRequest):
     <body><div id='main'>Welkom bij Meester.app</div></body>
     </html>
     """
+
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
@@ -72,11 +75,13 @@ Gebruikersverzoek:
 
 Aangepaste HTML:
 """
+
     completion = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
+
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
