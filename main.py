@@ -8,8 +8,8 @@ from supabase import create_client, Client
 app = FastAPI()
 
 # Supabase client setup
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+supabase_url = os.getenv("https://rybezhoovslkutsugzvv.supabase.co")
+supabase_key = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5YmV6aG9vdnNsa3V0c3VnenZ2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTIyMzA0OCwiZXhwIjoyMDY0Nzk5MDQ4fQ.7cp-7vlUyIcgT15kS6wjE9ayopjXVZzLIB9E0d0_68Q")
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # CORS instellingen
