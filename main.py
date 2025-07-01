@@ -44,10 +44,11 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       })
+
       if (!res.ok) throw new Error("Backend fout: " + res.statusText)
       const data = await res.json()
 
-      console.log("✅ AI HTML output:", data.html) // Debug check
+      console.log("✅ AI HTML output:", data.html)
 
       setSupabaseOutput(data.supabase_instructions || "-")
       setVersion(data.version_timestamp || "-")
@@ -61,6 +62,7 @@ export default function Home() {
           timestamp: data.version_timestamp,
         },
       ])
+
       fetchVersions()
     } catch (e: any) {
       alert("Fout bij AI-aanroep: " + e.message)
@@ -86,7 +88,8 @@ export default function Home() {
     setPrompt(v.prompt)
     setSupabaseOutput(v.supabase_instructions)
     setVersion(v.timestamp)
-    setHtmlPreview(v.html)
+    setHtmlPreview(v.html || "<div style='color:red;'>Geen HTML opgeslagen in deze versie</div>")
+    console.log("🕓 Geselecteerde versie:", v.timestamp)
   }
 
   return (
@@ -103,6 +106,7 @@ export default function Home() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
+
         <button
           className="mt-4 bg-green-600 hover:bg-green-500 px-6 py-3 rounded text-lg font-semibold transition"
           onClick={handleSubmit}
@@ -112,7 +116,10 @@ export default function Home() {
 
         <div>
           <h2 className="font-semibold text-sm text-zinc-400 mb-1">Supabase Instructions</h2>
-          <pre className="bg-zinc-800 p-3 rounded text-xs whitespace-pre-wrap max-h-28 overflow-y-auto">{supabaseOutput}</pre>
+          <pre className="bg-zinc-800 p-3 rounded text-xs whitespace-pre-wrap max-h-28 overflow-y-auto">
+            {supabaseOutput}
+          </pre>
+
           <button
             className="mt-2 bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-sm font-medium transition"
             onClick={handleSupabaseExecution}
