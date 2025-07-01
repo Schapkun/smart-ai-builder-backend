@@ -7,22 +7,29 @@ from supabase import create_client, Client
 
 app = FastAPI()
 
-# Supabase client setup - haalt URL en key uit environment variables
+# Correct environment variables ophalen
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+
+if not supabase_url or not supabase_key:
+    raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
+
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # CORS instellingen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Pas aan naar frontend domein in productie
+    allow_origins=["*"],  # Pas aan naar je frontend domein in productie
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# OpenAI client setup
+# OpenAI client
 openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise Exception("OpenAI API key moet als environment variable gezet zijn.")
+
 client = OpenAI(api_key=openai_api_key)
 
 class PromptRequest(BaseModel):
