@@ -8,6 +8,15 @@ import sys
 
 app = FastAPI()
 
+# Voeg CORS middleware toe, alleen jouw frontend domein toegestaan
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://smart-ai-builder-frontend.onrender.com"],  # Vervang door jouw frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Lees environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
