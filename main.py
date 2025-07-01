@@ -1,6 +1,5 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel
 import os
 from openai import OpenAI
@@ -9,50 +8,52 @@ import sys
 
 app = FastAPI()
 
-# Voor debug: tijdelijk CORS openzetten voor ALLES
+# CORS middleware: staat ALLES toe (voor debug, niet voor productie!)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://smart-ai-builder-frontend.onrender.com"],  # Of tijdelijk ["*"]
+    allow_origins=["*"],  # Laat alle origins toe
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Laat alle HTTP methoden toe
+    allow_headers=["*"],  # Laat alle headers toe
 )
 
-# Expliciete preflight OPTIONS handler
-@app.options("/{full_path:path}")
-async def preflight_handler(full_path: str, request: Request):
-    headers = {
-        "Access-Control-Allow-Origin": "https://smart-ai-builder-frontend.onrender.com",  # Of "*"
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", ""),
-        "Access-Control-Allow-Credentials": "true",
-    }
-    return Response(status_code=204, headers=headers)
-
-
-# Environment variables
+# Environment variables ophalen
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
+# Debug info naar logs sturen
 print("DEBUG - SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("DEBUG - SUPABASE_SERVICE_ROLE:", supabase_key, file=sys.stderr)
 print("DEBUG - OPENAI_API_KEY:", (openai_api_key[:5] + "...") if openai_api_key else None, file=sys.stderr)
 
+# Check of keys bestaan
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
+# Clients aanmaken
 supabase = create_client(supabase_url, supabase_key)
 client = OpenAI(api_key=openai_api_key)
 
+# Data models
 class PromptRequest(BaseModel):
     prompt: str
 
 class PublishRequest(BaseModel):
     version_id: str
 
+# Endpoint om environment variables te checken
+@app.get("/env")
+async def get_env():
+    return {
+        "SUPABASE_URL": supabase_url,
+        "SUPABASE_SERVICE_ROLE": supabase_key,
+        "OPENAI_API_KEY": (openai_api_key[:5] + "...") if openai_api_key else None,
+    }
+
+# Endpoint om prompt te verwerken
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
@@ -63,7 +64,6 @@ async def handle_prompt(req: PromptRequest):
     <body><div id='main'>Welkom bij Meester.app</div></body>
     </html>
     """
-
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
@@ -76,11 +76,10 @@ Gebruikersverzoek:
 
 Aangepaste HTML:
 """
-
     completion = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
-        temperature=0
+        temperature=0,
     )
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
@@ -97,6 +96,7 @@ Aangepaste HTML:
         "version_timestamp": timestamp,
     }
 
+# Endpoint om preview te publiceren als live
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
     version = supabase.table("versions").select("html_preview").eq("id", req.version_id).single().execute()
