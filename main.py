@@ -1,11 +1,12 @@
 # File: main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os, sys
 from openai import OpenAI
 from supabase import create_client
+import os
+import sys
 
 # ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
@@ -23,22 +24,22 @@ app.add_middleware(
 )
 
 # ─── 3) Environment ─────────────────────────────────────────────────────
-supabase_url   = os.getenv("SUPABASE_URL")
-supabase_key   = os.getenv("SUPABASE_SERVICE_ROLE")
-openai_key     = os.getenv("OPENAI_API_KEY")
-
-print("DEBUG - SUPABASE_URL:", supabase_url, file=sys.stderr)
-print("DEBUG - OPENAI_API_KEY:", (openai_key[:5] + "...") if openai_key else None, file=sys.stderr)
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+openai_key   = os.getenv("OPENAI_API_KEY")
 
 if not supabase_url or not supabase_key:
-    raise Exception("SUPABASE_URL en SUPABASE_SERVICE_ROLE moeten als env vars zijn ingesteld")
+    raise Exception("SUPABASE_URL en SUPABASE_SERVICE_ROLE moeten zijn ingesteld")
 if not openai_key:
     raise Exception("OPENAI_API_KEY ontbreekt")
 
 supabase = create_client(supabase_url, supabase_key)
 openai   = OpenAI(api_key=openai_key)
 
-# ─── 4) Data Models ─────────────────────────────────────────────────────
+print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
+print("✅ OPENAI_API_KEY:", (openai_key[:5] + "...") if openai_key else None, file=sys.stderr)
+
+# ─── 4) Models ──────────────────────────────────────────────────────────
 class PromptRequest(BaseModel):
     prompt: str
 
@@ -51,11 +52,14 @@ class PublishRequest(BaseModel):
 async def get_env():
     return {
         "supabase_url": supabase_url,
-        "openai": (openai_key[:5] + "...") if openai_key else None,
+        "openai_key_start": (openai_key[:5] + "..."),
     }
 
 @app.post("/prompt")
-async def handle_prompt(req: PromptRequest):
+async def handle_prompt(req: PromptRequest, request: Request):
+    origin = request.headers.get("origin")
+    print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
+
     try:
         result = supabase.table("versions") \
                          .select("html_live") \
@@ -68,8 +72,8 @@ async def handle_prompt(req: PromptRequest):
             current_html = result.data[0]["html_live"]
 
         ai_prompt = f"""
-Je bent een AI die HTML aanpast op basis van een gebruikersverzoek.
-Geef alleen de **volledige aangepaste HTML** terug.
+Je bent een AI die bestaande HTML aanpast op basis van een gebruikersverzoek.
+Geef alleen de volledige aangepaste HTML terug.
 
 Huidige HTML:
 {current_html}
@@ -83,7 +87,7 @@ Aangepaste HTML:
         completion = openai.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": ai_prompt}],
-            temperature=0,
+            temperature=0
         )
 
         html = completion.choices[0].message.content.strip()
@@ -102,8 +106,8 @@ Aangepaste HTML:
         }
 
     except Exception as e:
-        print("ERROR in /prompt route:", str(e), file=sys.stderr)
-        return {"error": "Er is iets misgegaan bij het verwerken van de prompt."}
+        print("❌ ERROR in /prompt:", str(e), file=sys.stderr)
+        return {"error": "Interne fout bij verwerken prompt."}
 
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
@@ -122,8 +126,8 @@ async def publish_version(req: PublishRequest):
                 .eq("id", req.version_id) \
                 .execute()
 
-        return {"message": "Live versie gepubliceerd."}
+        return {"message": "Live versie succesvol gepubliceerd."}
 
     except Exception as e:
-        print("ERROR in /publish route:", str(e), file=sys.stderr)
+        print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return {"error": "Publicatie mislukt"}
