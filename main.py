@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -9,16 +9,28 @@ import sys
 
 app = FastAPI()
 
-# CORS middleware - direct na app instantie
+# Voor debug: tijdelijk CORS openzetten voor ALLES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://smart-ai-builder-frontend.onrender.com"],
+    allow_origins=["https://smart-ai-builder-frontend.onrender.com"],  # Of tijdelijk ["*"]
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Lees environment variables
+# Expliciete preflight OPTIONS handler
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str, request: Request):
+    headers = {
+        "Access-Control-Allow-Origin": "https://smart-ai-builder-frontend.onrender.com",  # Of "*"
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", ""),
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return Response(status_code=204, headers=headers)
+
+
+# Environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -29,7 +41,6 @@ print("DEBUG - OPENAI_API_KEY:", (openai_api_key[:5] + "...") if openai_api_key 
 
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
-
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
@@ -41,16 +52,6 @@ class PromptRequest(BaseModel):
 
 class PublishRequest(BaseModel):
     version_id: str
-
-# Optie om preflight requests te accepteren
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return Response(headers={
-        "Access-Control-Allow-Origin": "https://smart-ai-builder-frontend.onrender.com",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE, PATCH",
-        "Access-Control-Allow-Headers": "*",
-        "Access-Control-Allow-Credentials": "true",
-    })
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
@@ -81,7 +82,6 @@ Aangepaste HTML:
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
-
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
