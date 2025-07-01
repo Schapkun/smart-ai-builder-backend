@@ -1,6 +1,6 @@
-# ─── backend/main.py ───────────────────────────────────────────────────────────
+# main.py (backend)
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -8,63 +8,69 @@ from openai import OpenAI
 from supabase import create_client
 import sys
 
-# 1) FastAPI‐app aanmaken
 app = FastAPI()
 
-# 2) CORS‐middleware meteen na app = FastAPI()
+# CORS middleware: sta expliciet je frontend- en preview-domeinen toe
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://smart-ai-builder-frontend.onrender.com"],  # jouw front-end URL
+    allow_origins=[
+        "https://smart-ai-builder-frontend.onrender.com",
+        "https://meester.app",
+    ],
     allow_credentials=True,
-    allow_methods=["OPTIONS", "POST"],  # preflight + POST toestaan
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
-    max_age=600,
 )
 
-# 3) (Optioneel) expliciete preflight handler voor /prompt
-@app.options("/prompt")
-async def preflight_prompt():
-    return Response(status_code=200)
+# ENV vars
+supabase_url      = os.getenv("SUPABASE_URL")
+supabase_key      = os.getenv("SUPABASE_SERVICE_ROLE")
+openai_api_key    = os.getenv("OPENAI_API_KEY")
 
-# 4) Environment variables lezen
-supabase_url       = os.getenv("SUPABASE_URL")
-supabase_key       = os.getenv("SUPABASE_SERVICE_ROLE")
-openai_api_key     = os.getenv("OPENAI_API_KEY")
+# Debug naar logs
+print("DEBUG - SUPABASE_URL:",      supabase_url,   file=sys.stderr)
+print("DEBUG - SUPABASE_SERVICE_ROLE:", supabase_key, file=sys.stderr)
+print("DEBUG - OPENAI_API_KEY:",   (openai_api_key[:5] + "...") if openai_api_key else None, file=sys.stderr)
 
-# 5) Verplicht checken
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
-# 6) Clients aanmaken
+# Clients aanmaken
 supabase = create_client(supabase_url, supabase_key)
 client   = OpenAI(api_key=openai_api_key)
 
-# 7) Data‐modellen
+# Data-modellen
 class PromptRequest(BaseModel):
     prompt: str
 
 class PublishRequest(BaseModel):
     version_id: str
 
-# 8) /prompt endpoint
+@app.get("/env")
+async def get_env():
+    return {
+        "SUPABASE_URL":      supabase_url,
+        "SUPABASE_SERVICE_ROLE": supabase_key,
+        "OPENAI_API_KEY":    (openai_api_key[:5] + "...") if openai_api_key else None
+    }
+
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
-    # haal laatste gepubliceerde live-HTML
-    result = supabase.table("versions") \
-                     .select("html_live") \
-                     .order("timestamp", desc=True) \
-                     .limit(1) \
-                     .execute()
-
-    current_html = result.data[0]["html_live"] if result.data else """
+    # Haal huidige live HTML
+    res = supabase.table("versions") \
+                  .select("html_live") \
+                  .order("timestamp", desc=True) \
+                  .limit(1) \
+                  .execute()
+    current_html = res.data[0]["html_live"] if res.data else """
     <!DOCTYPE html>
     <html><head><title>Meester.app</title></head>
-    <body><div id='main'>Welkom bij Meester.app</div></body></html>
+    <body><div id='main'>Welkom bij Meester.app</div></body>
+    </html>
     """
 
-    # AI prompt bouw
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
@@ -78,43 +84,35 @@ Gebruikersverzoek:
 Aangepaste HTML:
 """
 
-    # aanroep OpenAI
     completion = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
-
-    html      = completion.choices[0].message.content.strip()
+    html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
-    # sla preview op (live blijft ongewijzigd)
+    # Bewaar nieuwe preview
     supabase.table("versions").insert({
-        "prompt":         req.prompt,
-        "html_preview":   html,
-        "html_live":      current_html,
-        "timestamp":      timestamp,
+        "prompt": req.prompt,
+        "html_preview": html,
+        "html_live": current_html,
+        "timestamp": timestamp,
     }).execute()
 
-    return {
-        "html":              html,
-        "version_timestamp": timestamp,
-    }
+    return {"html": html, "version_timestamp": timestamp}
 
-# 9) /publish endpoint
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
-    version = supabase.table("versions") \
-                      .select("html_preview") \
-                      .eq("id", req.version_id) \
-                      .single() \
-                      .execute()
-
-    if not version.data:
+    row = supabase.table("versions") \
+                  .select("html_preview") \
+                  .eq("id", req.version_id) \
+                  .single() \
+                  .execute()
+    if not row.data:
         return {"error": "Versie niet gevonden"}
 
-    html_to_publish = version.data["html_preview"]
-
+    html_to_publish = row.data["html_preview"]
     supabase.table("versions") \
             .update({"html_live": html_to_publish}) \
             .eq("id", req.version_id) \
