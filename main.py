@@ -1,21 +1,23 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import openai
 import os
+import openai
+from openai import OpenAI
 
 app = FastAPI()
 
 # CORS voor frontend toegang
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Pas aan naar je frontend domein voor productie
+    allow_origins=["*"],  # Vervang door frontend domein in productie
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# OpenAI client instellen
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -23,7 +25,6 @@ class PromptRequest(BaseModel):
 class ExecuteRequest(BaseModel):
     instructions: str
 
-# Dummy HTML om te starten — je kunt dit vervangen door live project HTML laden
 current_html = """
 <!DOCTYPE html>
 <html>
@@ -59,13 +60,13 @@ Gebruikersverzoek:
 Aangepaste HTML:
 """
 
-    completion = openai.ChatCompletion.create(
+    completion = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
 
-    html = completion.choices[0].message["content"].strip()
+    html = completion.choices[0].message.content.strip()
 
     return {
         "html": html,
@@ -75,5 +76,4 @@ Aangepaste HTML:
 
 @app.post("/execute-supabase")
 async def execute_supabase(req: ExecuteRequest):
-    # Dummy endpoint voor nu
     return {"message": "Supabase instructies uitgevoerd (simulatie)"}
