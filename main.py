@@ -1,17 +1,13 @@
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
+import openai
 import os
-import json
-import logging
-from openai import OpenAI
-import requests
-
-logging.basicConfig(level=logging.INFO)
+from datetime import datetime
 
 app = FastAPI()
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,124 +16,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = OpenAI()
+# OpenAI Key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-SUPABASE_URL = "https://rybezhoovslkutsugzvv.supabase.co"
-SUPABASE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5YmV6aG9vdnNsa3V0c3VnenZ2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTIyMzA0OCwiZXhwIjoyMDY0Nzk5MDQ4fQ.7cp-7vlUyIcgT15kS6wjE9ayopjXVZzLIB9E0d0_68Q"
+# In-memory HTML (optioneel later vervangen door DB)
+current_html = """<div class='content'>
+  <footer style='text-align: left;'>Meester.app v1.0</footer>
+</div>"""
 
+# Prompt input
 class PromptRequest(BaseModel):
     prompt: str
 
-class SupabaseInstructionRequest(BaseModel):
+# Execute Supabase-instructies (voor later)
+class SupabaseRequest(BaseModel):
     instructions: str
 
-def extract_between(text, start_tag, end_tag):
-    try:
-        return text.split(start_tag)[1].split(end_tag)[0].strip()
-    except Exception as e:
-        logging.warning(f"Extract failed: {e}")
-        return ""
-
-def execute_supabase_instructions(instructions: str):
-    try:
-        if not instructions or not instructions.strip().startswith("{"):
-            logging.info("Geen Supabase JSON-instructies om uit te voeren.")
-            return {"message": "Geen Supabase instructies nodig."}
-
-        parsed = json.loads(instructions)
-        table = parsed.get("table")
-        action = parsed.get("action")
-        data = parsed.get("data", {})
-
-        if not table or not action:
-            return {"error": "Ongeldige instructies: ontbrekend 'table' of 'action'"}
-
-        url = f"{SUPABASE_URL}/rest/v1/{table}"
-
-        headers = {
-            "apikey": SUPABASE_ROLE_KEY,
-            "Authorization": f"Bearer {SUPABASE_ROLE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
-
-        if action == "insert":
-            r = requests.post(url, headers=headers, json=data)
-        elif action == "update":
-            match = parsed.get("match", {})
-            r = requests.patch(url, headers=headers, json=data, params=match)
-        elif action == "delete":
-            match = parsed.get("match", {})
-            r = requests.delete(url, headers=headers, params=match)
-        else:
-            return {"error": f"Onbekende actie: {action}"}
-
-        return r.json()
-
-    except Exception as e:
-        logging.error(f"Supabase instructie mislukt: {e}")
-        return {"error": str(e)}
-
 @app.post("/prompt")
-async def run_prompt(data: PromptRequest):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Je bent een frontend developer en Supabase-expert. "
-                        "Je output is ALTIJD een JSON-object met twee velden: "
-                        "`html` en `supabase_instructions`. "
-                        "Gebruik GEEN markdown of backticks. GEEN extra tekst. Alleen geldige JSON als output."
-                    )
-                },
-                {"role": "user", "content": data.prompt},
-            ],
-        )
+async def process_prompt(req: PromptRequest):
+    global current_html
 
-        ai_output = response.choices[0].message.content.strip()
-        logging.info(f"AI output: {ai_output}")
+    # Prompt voor AI om HTML aan te passen
+    ai_prompt = f"""
+Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
+Geef alleen de volledige aangepaste HTML terug.
 
-        if ai_output.startswith("```"):
-            ai_output = ai_output.strip("`").replace("json", "").strip()
+Huidige HTML:
+{current_html}
 
-        try:
-            ai_json = json.loads(ai_output)
-            html = ai_json.get("html", "<div>Geen geldige HTML ontvangen.</div>")
-            supabase_instructions = ai_json.get("supabase_instructions", "")
-        except json.JSONDecodeError as decode_err:
-            logging.warning(f"JSON decode error: {decode_err}")
-            html = extract_between(ai_output, "<html>", "</html>") or "<div>HTML extractie mislukt</div>"
-            supabase_instructions = extract_between(ai_output, "<supabase>", "</supabase>") or ""
+Gebruikersverzoek:
+"""{req.prompt}"""
 
-        execution_result = execute_supabase_instructions(supabase_instructions)
+Aangepaste HTML:
+"""
 
-        return {
-            "html": html,
-            "supabase_instructions": supabase_instructions,
-            "version_timestamp": datetime.utcnow().isoformat(),
-            "execution_result": execution_result,
-            "raw_output": ai_output,
-        }
+    response = openai.ChatCompletion.create(
+        model="gpt-4",  # evt. gpt-4o
+        messages=[
+            {"role": "system", "content": "Je bent een AI die bestaande HTML aanpast. Geef alleen volledige geldige HTML terug."},
+            {"role": "user", "content": ai_prompt},
+        ],
+        temperature=0.2,
+    )
 
-    except Exception as e:
-        logging.error(f"OpenAI error: {str(e)}")
-        return {
-            "error": str(e),
-            "html": f"<div style='color:red'>Fout bij AI-aanroep: {str(e)}</div>",
-            "supabase_instructions": "",
-            "version_timestamp": datetime.utcnow().isoformat(),
-        }
+    new_html = response.choices[0].message.content.strip()
+    current_html = new_html  # update globale html
+
+    return {
+        "html": new_html,
+        "supabase_instructions": "",  # optioneel leeg
+        "version_timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.post("/execute-supabase")
-async def execute_supabase(data: SupabaseInstructionRequest):
-    try:
-        instructions = data.instructions
-        logging.info(f"Supabase instructie ontvangen: {instructions}")
-        result = execute_supabase_instructions(instructions)
-        return {"message": "Instructies uitgevoerd.", "result": result}
-    except Exception as e:
-        logging.error(f"Fout bij supabase-instructie: {str(e)}")
-        return {"message": "Fout bij uitvoeren", "error": str(e)}
+async def execute_supabase(req: SupabaseRequest):
+    return {"message": "Geen supabase-acties nodig voor deze prompt."}
+
+@app.get("/")
+def root():
+    return {"message": "AI HTML builder draait"}
