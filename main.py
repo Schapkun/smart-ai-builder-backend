@@ -4,32 +4,25 @@ from pydantic import BaseModel
 import os
 from openai import OpenAI
 from supabase import create_client
+import sys
 
 app = FastAPI()
 
-# Haal Supabase URL en key op uit environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+print("DEBUG - SUPABASE_URL:", supabase_url, file=sys.stderr)
+print("DEBUG - SUPABASE_SERVICE_ROLE:", supabase_key, file=sys.stderr)
+print("DEBUG - OPENAI_API_KEY:", openai_api_key[:5] + "...", file=sys.stderr if openai_api_key else sys.stderr)
 
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
 
-supabase = create_client(supabase_url, supabase_key)
-
-# CORS instellingen
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Vervang dit in productie met je frontend domein
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# OpenAI client initialiseren (API key ook via env var)
-openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
+supabase = create_client(supabase_url, supabase_key)
 client = OpenAI(api_key=openai_api_key)
 
 class PromptRequest(BaseModel):
@@ -40,7 +33,6 @@ class PublishRequest(BaseModel):
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
-    # Haal laatste gepubliceerde html live op als basis
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
@@ -72,7 +64,6 @@ Aangepaste HTML:
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
-    # Sla preview op, live blijft hetzelfde
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
