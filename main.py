@@ -22,6 +22,9 @@ app.add_middleware(
 
 client = OpenAI()
 
+SUPABASE_URL = "https://rybezhoovslkutsugzvv.supabase.co"
+SUPABASE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5YmV6aG9vdnNsa3V0c3VnenZ2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTIyMzA0OCwiZXhwIjoyMDY0Nzk5MDQ4fQ.7cp-7vlUyIcgT15kS6wjE9ayopjXVZzLIB9E0d0_68Q"
+
 class PromptRequest(BaseModel):
     prompt: str
 
@@ -36,17 +39,36 @@ def extract_between(text, start_tag, end_tag):
         return ""
 
 def execute_supabase_instructions(instructions: str):
-    """
-    Stuur automatisch Supabase instructies naar je Supabase-agent endpoint
-    """
     try:
-        response = requests.post(
-            "https://your-agent-url/render-or-vercel/api",  # ⛳ Vervang dit met je eigen Supabase-agent-URL
-            json={"instructions": instructions},
-            timeout=10
-        )
-        response.raise_for_status()
-        return response.json()
+        parsed = json.loads(instructions)
+        table = parsed.get("table")
+        action = parsed.get("action")
+        data = parsed.get("data", {})
+
+        if not table or not action:
+            return {"error": "Ongeldige instructies: ontbrekend 'table' of 'action'"}
+
+        url = f"{SUPABASE_URL}/rest/v1/{table}"
+
+        headers = {
+            "apikey": SUPABASE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
+        }
+
+        if action == "insert":
+            r = requests.post(url, headers=headers, json=data)
+        elif action == "update":
+            match = parsed.get("match", {})
+            r = requests.patch(url, headers=headers, json=data, params=match)
+        elif action == "delete":
+            match = parsed.get("match", {})
+            r = requests.delete(url, headers=headers, params=match)
+        else:
+            return {"error": f"Onbekende actie: {action}"}
+
+        return r.json()
     except Exception as e:
         logging.error(f"Supabase instructie mislukt: {e}")
         return {"error": str(e)}
@@ -85,7 +107,6 @@ async def run_prompt(data: PromptRequest):
             html = extract_between(ai_output, "<html>", "</html>") or "<div>HTML extractie mislukt</div>"
             supabase_instructions = extract_between(ai_output, "<supabase>", "</supabase>") or ""
 
-        # ✅ Voer automatisch Supabase instructies uit
         execution_result = execute_supabase_instructions(supabase_instructions)
 
         return {
