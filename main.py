@@ -7,7 +7,7 @@ from supabase import create_client, Client
 
 app = FastAPI()
 
-# Supabase client setup - juiste gebruik van os.getenv met variabelenamen
+# Supabase client setup - haalt URL en key uit environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 supabase: Client = create_client(supabase_url, supabase_key)
@@ -21,8 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# OpenAI client setup
+openai_api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=openai_api_key)
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -32,6 +33,7 @@ class PublishRequest(BaseModel):
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
+    # Haal laatst gepubliceerde HTML op als basis
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
@@ -63,6 +65,7 @@ Aangepaste HTML:
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
+    # Sla preview op, live HTML blijft ongewijzigd
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
@@ -77,11 +80,14 @@ Aangepaste HTML:
 
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
+    # Vind preview versie op basis van id
     version = supabase.table("versions").select("html_preview").eq("id", req.version_id).single().execute()
     if not version.data:
         return {"error": "Versie niet gevonden"}
 
     html_to_publish = version.data["html_preview"]
+
+    # Zet preview om naar live HTML
     supabase.table("versions").update({"html_live": html_to_publish}).eq("id", req.version_id).execute()
 
     return {"message": "Live versie bijgewerkt."}
