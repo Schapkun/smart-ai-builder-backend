@@ -1,127 +1,89 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
-from supabase import create_client
-from datetime import datetime, timezone
+from datetime import datetime
 import os
-import json
-import sys
+import openai
+import requests
 
 app = FastAPI()
 
+# Allow frontend to access this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://smart-ai-builder-frontend.onrender.com",
-        "https://meester.app"
-    ],
+    allow_origins=["*"],  # You can restrict this in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-openai_key   = os.getenv("OPENAI_API_KEY")
+# Load environment variables
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_API_KEY = os.environ.get("SUPABASE_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-if not supabase_url or not supabase_key:
-    raise Exception("SUPABASE_URL en SUPABASE_SERVICE_ROLE moeten zijn ingesteld")
-if not openai_key:
-    raise Exception("OPENAI_API_KEY ontbreekt")
-
-supabase = create_client(supabase_url, supabase_key)
-openai   = OpenAI(api_key=openai_key)
-
-print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
-print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
+openai.api_key = OPENAI_API_KEY
 
 class PromptRequest(BaseModel):
     prompt: str
 
-class PublishRequest(BaseModel):
-    version_id: str
-
-@app.get("/env")
-async def get_env():
-    return {
-        "supabase_url": supabase_url,
-        "openai_key_start": (openai_key[:5] + "..."),
-    }
-
 @app.post("/prompt")
-async def handle_prompt(req: PromptRequest, request: Request):
-    origin = request.headers.get("origin")
-    print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
-
+async def handle_prompt(request: PromptRequest):
     try:
-        result = supabase.table("versions") \
-                         .select("html_live") \
-                         .order("timestamp", desc=True) \
-                         .limit(1) \
-                         .execute()
-
-        current_html = "<html><body><div>Welkom</div></body></html>"
-        if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
-            current_html = result.data[0]["html_live"]
-
-        ai_prompt = f"""
-Je bent een AI die bestaande HTML aanpast op basis van een gebruikersverzoek.
-Geef alleen de volledige aangepaste HTML terug.
-
-Huidige HTML:
-{current_html}
-
-Gebruikersverzoek:
-{req.prompt}
-
-Aangepaste HTML:
-"""
-
-        completion = openai.chat.completions.create(
+        # Step 1: Generate HTML preview from prompt
+        system_prompt = (
+            "You are a senior frontend developer. Respond ONLY with clean HTML and inline CSS. "
+            "DO NOT include code fences (like ```html)."
+        )
+        response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": ai_prompt}],
-            temperature=0
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.prompt}
+            ],
+            temperature=0.2
+        )
+        html_preview = response['choices'][0]['message']['content']
+
+        # Step 2: Generate Supabase instruction from prompt
+        instruction_response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert in database design. Based on this prompt, generate a JSON Supabase instruction, for example: {\"action\": \"create_table\", \"table\": \"users\", \"columns\": [{\"name\": \"id\", \"type\": \"uuid\"}, ...]}"},
+                {"role": "user", "content": request.prompt}
+            ],
+            temperature=0.2
+        )
+        supabase_instructions = instruction_response['choices'][0]['message']['content']
+
+        # Step 3: Store in Supabase
+        payload = {
+            "prompt": request.prompt,
+            "html_preview": html_preview,
+            "timestamp": datetime.utcnow().isoformat(),
+            "supabase_instructions": supabase_instructions
+        }
+
+        headers = {
+            "apikey": SUPABASE_API_KEY,
+            "Authorization": f"Bearer {SUPABASE_API_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/versions",
+            headers=headers,
+            json=payload
         )
 
-        html = completion.choices[0].message.content.strip()
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        supabase.table("versions").insert({
-            "prompt": req.prompt,
-            "html_preview": html,
-            "html_live": current_html,
-            "timestamp": timestamp,
-        }).execute()
+        if not response.ok:
+            return {"error": "Supabase insert failed", "details": response.text}
 
         return {
-            "html": html,
-            "version_timestamp": timestamp,
+            "html_preview": html_preview,
+            "supabase_instructions": supabase_instructions
         }
 
     except Exception as e:
-        print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
-        return {"error": "Interne fout bij verwerken prompt."}
-
-@app.post("/publish")
-async def publish_version(req: PublishRequest):
-    try:
-        version = supabase.table("versions") \
-                          .select("html_preview") \
-                          .eq("id", req.version_id) \
-                          .single() \
-                          .execute()
-        if not version.data:
-            return {"error": "Versie niet gevonden"}
-
-        html_to_publish = version.data["html_preview"]
-        supabase.table("versions") \
-                .update({"html_live": html_to_publish}) \
-                .eq("id", req.version_id) \
-                .execute()
-
-        return {"message": "Live versie succesvol gepubliceerd."}
-
-    except Exception as e:
-        print("❌ ERROR in /publish route:", str(e), file=sys.stderr)
-        return {"error": "Publicatie mislukt"}
+        return {"error": str(e)}
