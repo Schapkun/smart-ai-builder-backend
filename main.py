@@ -3,28 +3,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 from openai import OpenAI
-from supabase import create_client, Client
+from supabase import create_client
 
 app = FastAPI()
 
-# Haal supabase gegevens op uit environment variables
+# Haal Supabase URL en key op uit environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
 
-supabase: Client = create_client(supabase_url, supabase_key)
+supabase = create_client(supabase_url, supabase_key)
 
+# CORS instellingen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In productie zet hier je frontend URL
+    allow_origins=["*"],  # Vervang dit in productie met je frontend domein
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# OpenAI client initialiseren (API key ook via env var)
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise Exception("OpenAI API key moet als environment variable gezet zijn.")
+
+client = OpenAI(api_key=openai_api_key)
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -34,6 +40,7 @@ class PublishRequest(BaseModel):
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
+    # Haal laatste gepubliceerde html live op als basis
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
@@ -65,6 +72,7 @@ Aangepaste HTML:
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
+    # Sla preview op, live blijft hetzelfde
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
