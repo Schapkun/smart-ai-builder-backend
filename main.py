@@ -40,6 +40,10 @@ def extract_between(text, start_tag, end_tag):
 
 def execute_supabase_instructions(instructions: str):
     try:
+        if not instructions or not instructions.strip().startswith("{"):
+            logging.info("Geen Supabase JSON-instructies om uit te voeren.")
+            return {"message": "Geen Supabase instructies nodig."}
+
         parsed = json.loads(instructions)
         table = parsed.get("table")
         action = parsed.get("action")
@@ -69,6 +73,7 @@ def execute_supabase_instructions(instructions: str):
             return {"error": f"Onbekende actie: {action}"}
 
         return r.json()
+
     except Exception as e:
         logging.error(f"Supabase instructie mislukt: {e}")
         return {"error": str(e)}
