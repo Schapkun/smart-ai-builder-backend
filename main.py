@@ -8,31 +8,38 @@ import sys
 
 app = FastAPI()
 
+# Lees environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
+# Debug prints naar stderr voor diagnose in logs
 print("DEBUG - SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("DEBUG - SUPABASE_SERVICE_ROLE:", supabase_key, file=sys.stderr)
-print("DEBUG - OPENAI_API_KEY:", openai_api_key[:5] + "...", file=sys.stderr if openai_api_key else sys.stderr)
+print("DEBUG - OPENAI_API_KEY:", (openai_api_key[:5] + "...") if openai_api_key else None, file=sys.stderr)
 
+# Check of alle keys aanwezig zijn
 if not supabase_url or not supabase_key:
     raise Exception("Supabase URL en key moeten als environment variables gezet zijn.")
 
 if not openai_api_key:
     raise Exception("OpenAI API key moet als environment variable gezet zijn.")
 
+# Maak clients aan
 supabase = create_client(supabase_url, supabase_key)
 client = OpenAI(api_key=openai_api_key)
 
+# Data models
 class PromptRequest(BaseModel):
     prompt: str
 
 class PublishRequest(BaseModel):
     version_id: str
 
+# Endpoint om prompt te verwerken
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
+    # Haal laatste live versie op
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
@@ -42,6 +49,7 @@ async def handle_prompt(req: PromptRequest):
     </html>
     """
 
+    # AI prompt
     ai_prompt = f"""
 Je bent een AI die bestaande HTML aanpast op basis van een gebruikersvraag.
 Geef alleen de volledige aangepaste HTML terug.
@@ -64,6 +72,7 @@ Aangepaste HTML:
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
+    # Insert preview, live blijft hetzelfde
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
@@ -76,6 +85,7 @@ Aangepaste HTML:
         "version_timestamp": timestamp,
     }
 
+# Endpoint om preview te publiceren als live
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
     version = supabase.table("versions").select("html_preview").eq("id", req.version_id).single().execute()
