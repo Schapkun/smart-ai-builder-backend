@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
-import openai
-from openai import OpenAI
+from openai import OpenAI  # ✅ Alleen deze import gebruiken
 
 app = FastAPI()
 
@@ -60,13 +59,13 @@ Gebruikersverzoek:
 Aangepaste HTML:
 """
 
-    completion = client.chat.completions.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": ai_prompt}],
         temperature=0
     )
 
-    html = completion.choices[0].message.content.strip()
+    html = response.choices[0].message.content.strip()
 
     return {
         "html": html,
