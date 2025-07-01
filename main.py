@@ -7,7 +7,7 @@ from supabase import create_client, Client
 
 app = FastAPI()
 
-# Correct environment variables ophalen
+# Haal supabase gegevens op uit environment variables
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
@@ -16,21 +16,15 @@ if not supabase_url or not supabase_key:
 
 supabase: Client = create_client(supabase_url, supabase_key)
 
-# CORS instellingen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Pas aan naar je frontend domein in productie
+    allow_origins=["*"],  # In productie zet hier je frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# OpenAI client
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    raise Exception("OpenAI API key moet als environment variable gezet zijn.")
-
-client = OpenAI(api_key=openai_api_key)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -40,7 +34,6 @@ class PublishRequest(BaseModel):
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest):
-    # Haal laatst gepubliceerde HTML op als basis
     result = supabase.table("versions").select("html_live").order("timestamp", desc=True).limit(1).execute()
     current_html = result.data[0]["html_live"] if result.data else """
     <!DOCTYPE html>
@@ -72,7 +65,6 @@ Aangepaste HTML:
     html = completion.choices[0].message.content.strip()
     timestamp = str(os.times().elapsed)
 
-    # Sla preview op, live HTML blijft ongewijzigd
     supabase.table("versions").insert({
         "prompt": req.prompt,
         "html_preview": html,
@@ -87,14 +79,12 @@ Aangepaste HTML:
 
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
-    # Vind preview versie op basis van id
     version = supabase.table("versions").select("html_preview").eq("id", req.version_id).single().execute()
     if not version.data:
         return {"error": "Versie niet gevonden"}
 
     html_to_publish = version.data["html_preview"]
 
-    # Zet preview om naar live HTML
     supabase.table("versions").update({"html_live": html_to_publish}).eq("id", req.version_id).execute()
 
     return {"message": "Live versie bijgewerkt."}
