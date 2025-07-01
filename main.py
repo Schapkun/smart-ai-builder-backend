@@ -5,8 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 from supabase import create_client
+from datetime import datetime, timezone
 import os
 import sys
+import json
 
 # ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
@@ -37,7 +39,7 @@ supabase = create_client(supabase_url, supabase_key)
 openai   = OpenAI(api_key=openai_key)
 
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
-print("✅ OPENAI_API_KEY:", (openai_key[:5] + "...") if openai_key else None, file=sys.stderr)
+print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
 # ─── 4) Models ──────────────────────────────────────────────────────────
 class PromptRequest(BaseModel):
@@ -91,18 +93,25 @@ Aangepaste HTML:
         )
 
         html = completion.choices[0].message.content.strip()
-        timestamp = str(os.times().elapsed)
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        instructions = {
+            "modification_summary": f"HTML aangepast op basis van prompt: '{req.prompt}'",
+            "generated_by": "AI v1",
+        }
 
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
             "html_live": current_html,
             "timestamp": timestamp,
+            "supabase_instructions": json.dumps(instructions),
         }).execute()
 
         return {
             "html": html,
             "version_timestamp": timestamp,
+            "supabase_instructions": json.dumps(instructions),
         }
 
     except Exception as e:
