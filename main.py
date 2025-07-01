@@ -6,6 +6,7 @@ import os
 import json
 import logging
 from openai import OpenAI
+import requests
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,6 +34,22 @@ def extract_between(text, start_tag, end_tag):
     except Exception as e:
         logging.warning(f"Extract failed: {e}")
         return ""
+
+def execute_supabase_instructions(instructions: str):
+    """
+    Stuur automatisch Supabase instructies naar je Supabase-agent endpoint
+    """
+    try:
+        response = requests.post(
+            "https://your-agent-url/render-or-vercel/api",  # ⛳ Vervang dit met je eigen Supabase-agent-URL
+            json={"instructions": instructions},
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Supabase instructie mislukt: {e}")
+        return {"error": str(e)}
 
 @app.post("/prompt")
 async def run_prompt(data: PromptRequest):
@@ -68,10 +85,14 @@ async def run_prompt(data: PromptRequest):
             html = extract_between(ai_output, "<html>", "</html>") or "<div>HTML extractie mislukt</div>"
             supabase_instructions = extract_between(ai_output, "<supabase>", "</supabase>") or ""
 
+        # ✅ Voer automatisch Supabase instructies uit
+        execution_result = execute_supabase_instructions(supabase_instructions)
+
         return {
             "html": html,
             "supabase_instructions": supabase_instructions,
             "version_timestamp": datetime.utcnow().isoformat(),
+            "execution_result": execution_result,
             "raw_output": ai_output,
         }
 
@@ -84,15 +105,13 @@ async def run_prompt(data: PromptRequest):
             "version_timestamp": datetime.utcnow().isoformat(),
         }
 
-# ✅ Nieuw toegevoegd endpoint:
 @app.post("/execute-supabase")
 async def execute_supabase(data: SupabaseInstructionRequest):
     try:
         instructions = data.instructions
         logging.info(f"Supabase instructie ontvangen: {instructions}")
-
-        # (toekomst) hier kun je parsing en uitvoering toevoegen
-        return {"message": "Instructies ontvangen en gelogd."}
+        result = execute_supabase_instructions(instructions)
+        return {"message": "Instructies uitgevoerd.", "result": result}
     except Exception as e:
         logging.error(f"Fout bij supabase-instructie: {str(e)}")
         return {"message": "Fout bij uitvoeren", "error": str(e)}
