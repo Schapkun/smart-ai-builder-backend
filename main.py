@@ -81,10 +81,15 @@ Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
 
 "{req.prompt}"
 
-Beschrijf in max. 1 zin wat je gaat aanpassen. Geen code.
-Bijv:
-- "Ik heb de achtergrondkleur aangepast naar blauw."
-- "Ik heb een knop toegevoegd onderaan de pagina."
+Geef een vriendelijk en duidelijk antwoord.
+
+➤ Als het een VRAAG is (zoals advies of uitleg), geef dan een vriendelijk antwoord of suggestie — maar voer géén wijzigingen uit en zeg dat ook niet.
+
+➤ Alleen als het een WIJZIGING betreft (woorden zoals: verander, pas aan, voeg toe, verwijder, zet, maak, enz.), geef dan **in maximaal 1 zin** aan wat er is aangepast. Geef géén code.
+
+Voorbeelden:
+- Vraag: "Wat is een goede titel?" → Antwoord: "Een goede titel zou kunnen zijn: ‘Mijn Dashboard’."
+- Verzoek: "Verander de achtergrondkleur naar blauw." → Antwoord: "Ik heb de achtergrondkleur aangepast naar blauw."
 """
 
         explanation = openai.chat.completions.create(
