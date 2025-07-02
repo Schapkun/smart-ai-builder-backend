@@ -23,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ ENVIRONMENT VARS
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_key = os.getenv("OPENAI_API_KEY")
@@ -38,6 +39,8 @@ openai = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
+
+# ✅ STRUCTURE
 class Message(BaseModel):
     role: str
     content: str
@@ -54,6 +57,8 @@ class InitRequest(BaseModel):
     html: str
     page_route: str
 
+
+# ✅ HELPER
 def validate_and_fix_html(html: str) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -62,15 +67,19 @@ def validate_and_fix_html(html: str) -> str:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
         return html
 
+
+# ✅ POST /prompt
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
     origin = request.headers.get("origin")
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
+        fixed_route = "homepage"
+
         result = supabase.table("versions") \
             .select("html_preview", "html_live") \
-            .eq("page_route", req.page_route) \
+            .eq("page_route", fixed_route) \
             .order("timestamp", desc=True) \
             .limit(1) \
             .execute()
@@ -87,7 +96,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "role": "system",
             "content": (
                 f"Je bent een AI-assistent die helpt met het aanpassen van HTML voor een website.\n"
-                f"De gebruiker werkt aan pagina: {req.page_route}.\n"
+                f"De gebruiker werkt aan pagina: {fixed_route}.\n"
                 f"De huidige HTML van die pagina is:\n{current_html}\n"
                 f"Wanneer je een wijziging uitvoert, geef dan alleen de volledige aangepaste HTML terug, zonder uitleg of voorbeeldcode.\n"
                 f"Geef geen gedeeltelijke HTML of codefragmenten, alleen de volledige HTML.\n"
@@ -148,7 +157,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             supabase.table("versions").insert({
                 "prompt": req.prompt,
                 "html_preview": html,
-                "page_route": req.page_route,
+                "page_route": fixed_route,
                 "timestamp": timestamp,
                 "supabase_instructions": json.dumps(instructions),
             }).execute()
@@ -165,6 +174,8 @@ async def handle_prompt(req: PromptRequest, request: Request):
         print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij verwerken prompt."})
 
+
+# ✅ POST /publish
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
     try:
@@ -190,6 +201,8 @@ async def publish_version(req: PublishRequest):
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
 
+
+# ✅ POST /init
 @app.post("/init")
 async def init_html(req: InitRequest):
     try:
@@ -198,7 +211,7 @@ async def init_html(req: InitRequest):
         supabase.table("versions").insert({
             "prompt": "init",
             "html_preview": html,
-            "page_route": req.page_route,
+            "page_route": "homepage",
             "timestamp": timestamp,
             "supabase_instructions": json.dumps({"message": "Initiale HTML toegevoegd"}),
         }).execute()
@@ -207,12 +220,17 @@ async def init_html(req: InitRequest):
         print("❌ ERROR in /init:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
 
+
+# ✅ GET /preview/{page_route}
 @app.get("/preview/{page_route}")
 async def get_html_preview(page_route: str):
     try:
+        # OVERRIDE page_route met "homepage"
+        fixed_route = "homepage"
+
         result = supabase.table("versions") \
                          .select("html_preview") \
-                         .eq("page_route", page_route) \
+                         .eq("page_route", fixed_route) \
                          .order("timestamp", desc=True) \
                          .limit(1) \
                          .execute()
