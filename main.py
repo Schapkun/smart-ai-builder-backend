@@ -77,7 +77,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # Voeg contextuele system prompt toe, met duidelijke instructie voor enkel teruggeven van HTML zonder uitleg bij wijziging
+        # Striktere system prompt om enkel HTML terug te geven bij wijziging
         system_message = {
             "role": "system",
             "content": (
@@ -85,22 +85,20 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 f"De gebruiker werkt aan pagina: {req.page_route}.\n"
                 f"De huidige HTML van die pagina is:\n{current_html}\n"
                 f"Wanneer je een wijziging uitvoert, geef dan alleen de volledige aangepaste HTML terug, zonder uitleg of voorbeeldcode.\n"
-                f"Als het een vraag of advies is, geef dan alleen een vriendelijk antwoord, zonder HTML terug te sturen."
+                f"Geef geen gedeeltelijke HTML of codefragmenten, alleen de volledige HTML.\n"
+                f"Als het een vraag of advies is, geef dan alleen een vriendelijk antwoord zonder HTML."
             )
         }
 
-        # Bouw volledige chatgeschiedenis voor OpenAI, met system message voor context
         messages = [system_message]
         if req.chat_history:
             for msg in req.chat_history:
                 messages.append({"role": msg.role, "content": msg.content})
-        # Voeg nieuwste prompt toe
         messages.append({"role": "user", "content": req.prompt})
 
-        # Genereer uitleg / feedback
         explanation_prompt = (
-            f"Beantwoord vriendelijk en duidelijk.\n"
-            f"Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
+            "Beantwoord vriendelijk en duidelijk.\n"
+            "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
         )
 
         explanation = openai.chat.completions.create(
@@ -109,7 +107,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
             temperature=0.4,
         ).choices[0].message.content.strip()
 
-        # Genereer nieuwe HTML versie alleen bij wijziging
         if any(keyword in req.prompt.lower() for keyword in ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak"]):
             html_prompt_text = (
                 "Je krijgt hieronder de huidige volledige HTML.\n"
@@ -126,12 +123,10 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 temperature=0,
             ).choices[0].message.content.strip()
 
-            # Valideer en fix de HTML
             html = validate_and_fix_html(html)
         else:
-            html = None  # Geen nieuwe HTML bij alleen advies/vraag
+            html = None
 
-        # Sla alleen versies met html_preview op
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
