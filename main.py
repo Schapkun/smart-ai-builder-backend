@@ -199,3 +199,23 @@ async def init_html(req: InitRequest):
     except Exception as e:
         print("❌ ERROR in /init:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
+
+# ✅ NIEUW TOEGEVOEGDE ROUTE
+@app.get("/preview/{page_route}")
+async def get_html_preview(page_route: str):
+    try:
+        result = supabase.table("versions") \
+                         .select("html_preview") \
+                         .eq("page_route", page_route) \
+                         .order("timestamp", desc=True) \
+                         .limit(1) \
+                         .execute()
+
+        if not result.data or not result.data[0].get("html_preview"):
+            return JSONResponse(status_code=404, content={"error": "Geen preview-versie gevonden."})
+
+        return {"html": result.data[0]["html_preview"]}
+
+    except Exception as e:
+        print("❌ ERROR in /preview route:", str(e), file=sys.stderr)
+        return JSONResponse(status_code=500, content={"error": "Interne fout bij ophalen preview."})
