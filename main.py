@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import os
 import sys
 import json
-import time  # 👈 toegevoegd voor logging
 
 # ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
@@ -64,8 +63,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        start_time = time.time()  # 👈 starttijd loggen
-
         # Haal de laatste versie op (live of fallback)
         result = supabase.table("versions") \
                          .select("html_live") \
@@ -130,9 +127,6 @@ Nieuwe HTML:
             "timestamp": timestamp,
             "supabase_instructions": json.dumps(instructions),
         }).execute()
-
-        elapsed_time = time.time() - start_time  # 👈 eindtijd loggen
-        print(f"⏱️ Prompt verwerkt in {elapsed_time:.2f} seconden", file=sys.stderr)
 
         return {
             "html": html,
