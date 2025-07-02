@@ -63,6 +63,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
+        # Haal de laatste versie op (live of fallback)
         result = supabase.table("versions") \
                          .select("html_live") \
                          .order("timestamp", desc=True) \
@@ -73,9 +74,28 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        ai_prompt = f"""
-Je bent een AI die bestaande HTML aanpast op basis van een gebruikersverzoek.
-Geef alleen de volledige aangepaste HTML terug.
+        # ── AI: Genereer duidelijke uitleg ────────────────────────────────
+        explanation_prompt = f"""
+Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
+
+"{req.prompt}"
+
+Beschrijf in max. 1 zin wat je gaat aanpassen. Geen code.
+Bijv:
+- "Ik heb de achtergrondkleur aangepast naar blauw."
+- "Ik heb een knop toegevoegd onderaan de pagina."
+"""
+
+        explanation = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": explanation_prompt}],
+            temperature=0.4
+        ).choices[0].message.content.strip()
+
+        # ── AI: Genereer aangepaste HTML ─────────────────────────────────
+        html_prompt = f"""
+Je bent een AI die HTML aanpast. Hieronder staat de huidige HTML en het gebruikersverzoek.
+Pas de HTML aan en geef alleen de volledige nieuwe HTML terug.
 
 Huidige HTML:
 {current_html}
@@ -83,27 +103,27 @@ Huidige HTML:
 Gebruikersverzoek:
 {req.prompt}
 
-Aangepaste HTML:
+Nieuwe HTML:
 """
 
-        completion = openai.chat.completions.create(
+        html = openai.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": ai_prompt}],
+            messages=[{"role": "user", "content": html_prompt}],
             temperature=0
-        )
+        ).choices[0].message.content.strip()
 
-        html = completion.choices[0].message.content.strip()
+        # ── Tijdstempel en instructies ───────────────────────────────────
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
-
         instructions = {
-            "modification_summary": f"HTML aangepast op basis van prompt: '{req.prompt}'",
-            "generated_by": "AI v1",
+            "message": explanation,
+            "generated_by": "AI v2"
         }
 
+        # ── Opslaan in Supabase ──────────────────────────────────────────
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
-            "html_live": current_html,
+            "html_live": current_html,  # Nog niet doorgevoerd!
             "timestamp": timestamp,
             "supabase_instructions": json.dumps(instructions),
         }).execute()
@@ -111,11 +131,11 @@ Aangepaste HTML:
         return {
             "html": html,
             "version_timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
+            "supabase_instructions": instructions
         }
 
     except Exception as e:
-        print("❌ ERROR in /prompt:", str(e), file=sys.stderr)
+        print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return {"error": "Interne fout bij verwerken prompt."}
 
 @app.post("/publish")
@@ -126,10 +146,12 @@ async def publish_version(req: PublishRequest):
                           .eq("id", req.version_id) \
                           .single() \
                           .execute()
+
         if not version.data:
             return {"error": "Versie niet gevonden"}
 
         html_to_publish = version.data["html_preview"]
+
         supabase.table("versions") \
                 .update({"html_live": html_to_publish}) \
                 .eq("id", req.version_id) \
