@@ -1,5 +1,3 @@
-# File: main.py
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,7 +48,6 @@ class PublishRequest(BaseModel):
     version_id: str
 
 # ─── 5) Routes ──────────────────────────────────────────────────────────
-
 @app.get("/env")
 async def get_env():
     return {
@@ -74,7 +71,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # ── AI: Slimme uitleg ────────────────────────────────────────────
+        # Slimme uitleg prompt
         explanation_prompt = f"""
 Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
 
@@ -83,10 +80,6 @@ Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
 Beantwoord dit vriendelijk en duidelijk. Als de gebruiker een vraag stelt (zoals om advies of uitleg), geef dan alleen advies of een vriendelijk antwoord.
 
 Alleen als de gebruiker expliciet vraagt om iets te wijzigen in de HTML (zoals "verander", "pas aan", "voeg toe", "verwijder", enz.), geef dan in max. 1 zin een uitleg van wat je hebt aangepast. Geen code.
-
-Voorbeelden:
-- Vraag: "Kun je een advies geven voor de kleur?" → Antwoord: "Natuurlijk! Een zachte blauwe achtergrond zou mooi staan."
-- Verzoek: "Verander de achtergrondkleur naar blauw." → Antwoord: "Ik heb de achtergrondkleur aangepast naar blauw."
 """
 
         explanation = openai.chat.completions.create(
@@ -95,7 +88,6 @@ Voorbeelden:
             temperature=0.4
         ).choices[0].message.content.strip()
 
-        # ── AI: Genereer HTML alleen bij wijzigverzoek ───────────────────
         wijzig_keywords = ["verander", "pas aan", "wijzig", "voeg toe", "verwijder", "maak de achtergrond", "zet", "plaats"]
         is_wijziging = any(kw in req.prompt.lower() for kw in wijzig_keywords)
 
@@ -113,7 +105,6 @@ Gebruikersverzoek:
 
 Nieuwe HTML:
 """
-
             html = openai.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": html_prompt}],
@@ -126,7 +117,6 @@ Nieuwe HTML:
             "generated_by": "AI v2"
         }
 
-        # Alleen opslaan als er een wijziging is
         if is_wijziging and html:
             supabase.table("versions").insert({
                 "prompt": req.prompt,
@@ -169,3 +159,9 @@ async def publish_version(req: PublishRequest):
     except Exception as e:
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
+
+# ─── 6) Uvicorn-opstart (Render vereist dit!) ──────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))  # Render gebruikt dynamische poorten
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
