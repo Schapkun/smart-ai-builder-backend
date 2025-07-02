@@ -128,20 +128,23 @@ async def handle_prompt(req: PromptRequest, request: Request):
         else:
             html = None  # Geen nieuwe HTML bij alleen advies/vraag
 
-        # Sla op in Supabase (preview only)
+        # Sla alleen versies met html_preview op
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
             "generated_by": "AI v3"
         }
 
-        supabase.table("versions").insert({
-            "prompt": req.prompt,
-            "html_preview": html,
-            "page_route": req.page_route,
-            "timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
-        }).execute()
+        if html is not None:
+            supabase.table("versions").insert({
+                "prompt": req.prompt,
+                "html_preview": html,
+                "page_route": req.page_route,
+                "timestamp": timestamp,
+                "supabase_instructions": json.dumps(instructions),
+            }).execute()
+        else:
+            print("ℹ️ Geen nieuwe HTML gegenereerd, geen versie opgeslagen.")
 
         return {
             "html": html,
