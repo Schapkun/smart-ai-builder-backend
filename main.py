@@ -77,14 +77,15 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # Voeg contextuele system prompt toe
+        # Voeg contextuele system prompt toe, met duidelijke instructie voor enkel teruggeven van HTML zonder uitleg bij wijziging
         system_message = {
             "role": "system",
             "content": (
                 f"Je bent een AI-assistent die helpt met het aanpassen van HTML voor een website.\n"
                 f"De gebruiker werkt aan pagina: {req.page_route}.\n"
                 f"De huidige HTML van die pagina is:\n{current_html}\n"
-                f"Geef alleen een vriendelijk antwoord of maak wijzigingen indien gevraagd."
+                f"Wanneer je een wijziging uitvoert, geef dan alleen de volledige aangepaste HTML terug, zonder uitleg of voorbeeldcode.\n"
+                f"Als het een vraag of advies is, geef dan alleen een vriendelijk antwoord, zonder HTML terug te sturen."
             )
         }
 
@@ -111,10 +112,12 @@ async def handle_prompt(req: PromptRequest, request: Request):
         # Genereer nieuwe HTML versie alleen bij wijziging
         if any(keyword in req.prompt.lower() for keyword in ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak"]):
             html_prompt_text = (
-                "Pas onderstaande HTML aan volgens de gebruikersverzoeken.\n"
-                "Geef alleen de volledige nieuwe HTML terug.\n\n"
+                "Je krijgt hieronder de huidige volledige HTML.\n"
+                "Pas deze HTML volledig aan volgens het gebruikersverzoek.\n"
+                "Geef alleen de volledige nieuwe HTML terug, zonder extra uitleg of codevoorbeelden.\n\n"
                 f"Huidige HTML:\n{current_html}\n\n"
-                f"Gebruikersverzoek:\n{req.prompt}\n\nNieuwe HTML:\n"
+                f"Gebruikersverzoek:\n{req.prompt}\n\n"
+                "Nieuwe volledige HTML:\n"
             )
 
             html = openai.chat.completions.create(
