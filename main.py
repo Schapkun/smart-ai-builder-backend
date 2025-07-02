@@ -8,12 +8,10 @@ from datetime import datetime, timezone
 import os
 import sys
 import json
-from bs4 import BeautifulSoup  # toegevoegd voor HTML validatie
+from bs4 import BeautifulSoup  # HTML validatie
 
-# ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
 
-# ─── 2) CORS Middleware ─────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -25,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── 3) Environment ─────────────────────────────────────────────────────
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_key   = os.getenv("OPENAI_API_KEY")
@@ -41,15 +38,18 @@ openai   = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
-# ─── 4) Models ──────────────────────────────────────────────────────────
+class Message(BaseModel):
+    role: str
+    content: str
+
 class PromptRequest(BaseModel):
     prompt: str
-    page_route: str  # <-- nieuw veld toegevoegd
+    page_route: str
+    chat_history: list[Message]  # Nieuw: hele chatgeschiedenis
 
 class PublishRequest(BaseModel):
     version_id: str
 
-# ─── Hulpfunctie voor validatie en fixen van HTML ───────────────────────
 def validate_and_fix_html(html: str) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -57,16 +57,7 @@ def validate_and_fix_html(html: str) -> str:
         return fixed_html
     except Exception as e:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
-        return html  # fallback: originele HTML teruggeven
-
-# ─── 5) Routes ──────────────────────────────────────────────────────────
-
-@app.get("/env")
-async def get_env():
-    return {
-        "supabase_url": supabase_url,
-        "openai_key_start": (openai_key[:5] + "..."),
-    }
+        return html
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
@@ -85,63 +76,68 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # ── AI: Genereer uitleg ───────────────────────────────────────
-        explanation_prompt = f"""
-Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
+        # Voeg contextuele system prompt toe
+        system_message = {
+            "role": "system",
+            "content": (
+                f"Je bent een AI-assistent die helpt met het aanpassen van HTML voor een website.\n"
+                f"De gebruiker werkt aan pagina: {req.page_route}.\n"
+                f"De huidige HTML van die pagina is:\n{current_html}\n"
+                f"Geef alleen een vriendelijk antwoord of maak wijzigingen indien gevraagd."
+            )
+        }
 
-"{req.prompt}"
+        # Voeg laatste user prompt toe als aparte message (voor overzicht)
+        user_message = {"role": "user", "content": req.prompt}
 
-Geef een vriendelijk en duidelijk antwoord.
+        # Bouw volledige chatgeschiedenis voor OpenAI
+        messages = [system_message]
+        if req.chat_history:
+            for msg in req.chat_history:
+                messages.append({"role": msg.role, "content": msg.content})
+        # Voeg de nieuwste user prompt (kan dubbel zijn, maar is ok)
+        messages.append(user_message)
 
-➤ Als het een VRAAG is (zoals advies of uitleg), geef dan een vriendelijk antwoord of suggestie — maar voer géén wijzigingen uit en zeg dat ook niet.
-
-➤ Alleen als het een WIJZIGING betreft (woorden zoals: verander, pas aan, voeg toe, verwijder, zet, maak, enz.), geef dan **in maximaal 1 zin** aan wat er is aangepast. Geef géén code.
-
-Voorbeelden:
-- Vraag: "Wat is een goede titel?" → Antwoord: "Een goede titel zou kunnen zijn: ‘Mijn Dashboard’."
-- Verzoek: "Verander de achtergrondkleur naar blauw." → Antwoord: "Ik heb de achtergrondkleur aangepast naar blauw."
-"""
+        # Genereer uitleg / feedback
+        explanation_prompt = (
+            f"Beantwoord vriendelijk en duidelijk.\n"
+            f"Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
+        )
 
         explanation = openai.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": explanation_prompt}],
-            temperature=0.4
+            messages=messages + [{"role": "system", "content": explanation_prompt}],
+            temperature=0.4,
         ).choices[0].message.content.strip()
 
-        # ── AI: Genereer nieuwe HTML ───────────────────────────────────
-        html_prompt = f"""
-Je bent een AI die HTML aanpast. Hieronder staat de huidige HTML en het gebruikersverzoek.
-Pas de HTML aan en geef alleen de volledige nieuwe HTML terug.
-
-Huidige HTML:
-{current_html}
-
-Gebruikersverzoek:
-{req.prompt}
-
-Nieuwe HTML:
-"""
+        # Genereer nieuwe HTML versie
+        html_prompt_text = (
+            "Pas onderstaande HTML aan volgens de gebruikersverzoeken.\n"
+            "Geef alleen de volledige nieuwe HTML terug.\n\n"
+            f"Huidige HTML:\n{current_html}\n\n"
+            f"Gebruikersverzoek:\n{req.prompt}\n\nNieuwe HTML:\n"
+        )
 
         html = openai.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": html_prompt}],
-            temperature=0
+            messages=messages + [{"role": "system", "content": html_prompt_text}],
+            temperature=0,
         ).choices[0].message.content.strip()
 
-        # Valideer en fix de gegenereerde HTML
+        # Valideer en fix de HTML
         html = validate_and_fix_html(html)
 
-        # ── Opslaan in Supabase (preview only) ────────────────────────
+        # Sla op in Supabase
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
-            "generated_by": "AI v2"
+            "generated_by": "AI v3"
         }
 
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
-            "page_route": req.page_route,   # <-- hier page_route opslaan
+            "page_route": req.page_route,
             "timestamp": timestamp,
             "supabase_instructions": json.dumps(instructions),
         }).execute()
