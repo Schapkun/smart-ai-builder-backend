@@ -66,15 +66,19 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
     try:
         result = supabase.table("versions") \
-                         .select("html_live") \
+                         .select("html_preview", "html_live") \
                          .eq("page_route", req.page_route) \
                          .order("timestamp", desc=True) \
                          .limit(1) \
                          .execute()
 
         current_html = "<html><body><div>Welkom</div></body></html>"
-        if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
-            current_html = result.data[0]["html_live"]
+        if result.data and isinstance(result.data, list):
+            latest = result.data[0]
+            if "html_preview" in latest and latest["html_preview"]:
+                current_html = latest["html_preview"]
+            elif "html_live" in latest and latest["html_live"]:
+                current_html = latest["html_live"]
 
         system_message = {
             "role": "system",
