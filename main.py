@@ -23,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ ENVIRONMENT VARS
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_key = os.getenv("OPENAI_API_KEY")
@@ -38,6 +39,8 @@ openai = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
+
+# ✅ STRUCTURE
 class Message(BaseModel):
     role: str
     content: str
@@ -54,6 +57,8 @@ class InitRequest(BaseModel):
     html: str
     page_route: str
 
+
+# ✅ HELPER
 def validate_and_fix_html(html: str) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -62,6 +67,8 @@ def validate_and_fix_html(html: str) -> str:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
         return html
 
+
+# ✅ POST /prompt
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
     origin = request.headers.get("origin")
@@ -158,6 +165,8 @@ async def handle_prompt(req: PromptRequest, request: Request):
         print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij verwerken prompt."})
 
+
+# ✅ POST /publish
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
     try:
@@ -183,6 +192,8 @@ async def publish_version(req: PublishRequest):
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
 
+
+# ✅ POST /init
 @app.post("/init")
 async def init_html(req: InitRequest):
     try:
@@ -200,7 +211,8 @@ async def init_html(req: InitRequest):
         print("❌ ERROR in /init:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
 
-# ✅ NIEUW TOEGEVOEGDE ROUTE
+
+# ✅ GET /preview/{page_route}
 @app.get("/preview/{page_route}")
 async def get_html_preview(page_route: str):
     try:
