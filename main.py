@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from openai import OpenAI
 from supabase import create_client
@@ -63,7 +64,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        # Haal de laatste versie op (live of fallback)
+        # Haal de laatste live versie op
         result = supabase.table("versions") \
                          .select("html_live") \
                          .order("timestamp", desc=True) \
@@ -74,7 +75,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # ── AI: Genereer duidelijke uitleg ────────────────────────────────
+        # ── AI: Genereer uitleg ───────────────────────────────────────
         explanation_prompt = f"""
 Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
 
@@ -92,7 +93,7 @@ Bijv:
             temperature=0.4
         ).choices[0].message.content.strip()
 
-        # ── AI: Genereer aangepaste HTML ─────────────────────────────────
+        # ── AI: Genereer nieuwe HTML ───────────────────────────────────
         html_prompt = f"""
 Je bent een AI die HTML aanpast. Hieronder staat de huidige HTML en het gebruikersverzoek.
 Pas de HTML aan en geef alleen de volledige nieuwe HTML terug.
@@ -112,18 +113,16 @@ Nieuwe HTML:
             temperature=0
         ).choices[0].message.content.strip()
 
-        # ── Tijdstempel en instructies ───────────────────────────────────
+        # ── Opslaan in Supabase (preview only) ────────────────────────
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
             "generated_by": "AI v2"
         }
 
-        # ── Opslaan in Supabase ──────────────────────────────────────────
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
-            "html_live": current_html,  # Nog niet doorgevoerd!
             "timestamp": timestamp,
             "supabase_instructions": json.dumps(instructions),
         }).execute()
@@ -131,12 +130,12 @@ Nieuwe HTML:
         return {
             "html": html,
             "version_timestamp": timestamp,
-            "supabase_instructions": instructions
+            "instructions": instructions
         }
 
     except Exception as e:
         print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
-        return {"error": "Interne fout bij verwerken prompt."}
+        return JSONResponse(status_code=500, content={"error": "Interne fout bij verwerken prompt."})
 
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
@@ -148,7 +147,7 @@ async def publish_version(req: PublishRequest):
                           .execute()
 
         if not version.data:
-            return {"error": "Versie niet gevonden"}
+            return JSONResponse(status_code=404, content={"error": "Versie niet gevonden"})
 
         html_to_publish = version.data["html_preview"]
 
@@ -161,4 +160,4 @@ async def publish_version(req: PublishRequest):
 
     except Exception as e:
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
-        return {"error": "Publicatie mislukt"}
+        return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
