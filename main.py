@@ -64,7 +64,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        # Haal de laatste live versie op
         result = supabase.table("versions") \
                          .select("html_live") \
                          .order("timestamp", desc=True) \
@@ -75,16 +74,19 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # ── AI: Genereer uitleg ───────────────────────────────────────
+        # ── AI: Slimme uitleg ────────────────────────────────────────────
         explanation_prompt = f"""
 Je bent een AI-assistent voor een visuele HTML-bouwer. Een gebruiker zei:
 
 "{req.prompt}"
 
-Beschrijf in max. 1 zin wat je gaat aanpassen. Geen code.
-Bijv:
-- "Ik heb de achtergrondkleur aangepast naar blauw."
-- "Ik heb een knop toegevoegd onderaan de pagina."
+Beantwoord dit vriendelijk en duidelijk. Als de gebruiker een vraag stelt (zoals om advies of uitleg), geef dan alleen advies of een vriendelijk antwoord.
+
+Alleen als de gebruiker expliciet vraagt om iets te wijzigen in de HTML (zoals "verander", "pas aan", "voeg toe", "verwijder", enz.), geef dan in max. 1 zin een uitleg van wat je hebt aangepast. Geen code.
+
+Voorbeelden:
+- Vraag: "Kun je een advies geven voor de kleur?" → Antwoord: "Natuurlijk! Een zachte blauwe achtergrond zou mooi staan."
+- Verzoek: "Verander de achtergrondkleur naar blauw." → Antwoord: "Ik heb de achtergrondkleur aangepast naar blauw."
 """
 
         explanation = openai.chat.completions.create(
@@ -93,8 +95,13 @@ Bijv:
             temperature=0.4
         ).choices[0].message.content.strip()
 
-        # ── AI: Genereer nieuwe HTML ───────────────────────────────────
-        html_prompt = f"""
+        # ── AI: Genereer HTML alleen bij wijzigverzoek ───────────────────
+        wijzig_keywords = ["verander", "pas aan", "wijzig", "voeg toe", "verwijder", "maak de achtergrond", "zet", "plaats"]
+        is_wijziging = any(kw in req.prompt.lower() for kw in wijzig_keywords)
+
+        html = None
+        if is_wijziging:
+            html_prompt = f"""
 Je bent een AI die HTML aanpast. Hieronder staat de huidige HTML en het gebruikersverzoek.
 Pas de HTML aan en geef alleen de volledige nieuwe HTML terug.
 
@@ -107,25 +114,26 @@ Gebruikersverzoek:
 Nieuwe HTML:
 """
 
-        html = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": html_prompt}],
-            temperature=0
-        ).choices[0].message.content.strip()
+            html = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": html_prompt}],
+                temperature=0
+            ).choices[0].message.content.strip()
 
-        # ── Opslaan in Supabase (preview only) ────────────────────────
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
             "generated_by": "AI v2"
         }
 
-        supabase.table("versions").insert({
-            "prompt": req.prompt,
-            "html_preview": html,
-            "timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
-        }).execute()
+        # Alleen opslaan als er een wijziging is
+        if is_wijziging and html:
+            supabase.table("versions").insert({
+                "prompt": req.prompt,
+                "html_preview": html,
+                "timestamp": timestamp,
+                "supabase_instructions": json.dumps(instructions),
+            }).execute()
 
         return {
             "html": html,
