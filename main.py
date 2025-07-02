@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import os
 import sys
 import json
+from bs4 import BeautifulSoup  # toegevoegd voor HTML validatie
 
 # ─── 1) App Setup ───────────────────────────────────────────────────────
 app = FastAPI()
@@ -47,6 +48,16 @@ class PromptRequest(BaseModel):
 
 class PublishRequest(BaseModel):
     version_id: str
+
+# ─── Hulpfunctie voor validatie en fixen van HTML ───────────────────────
+def validate_and_fix_html(html: str) -> str:
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        fixed_html = str(soup)
+        return fixed_html
+    except Exception as e:
+        print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
+        return html  # fallback: originele HTML teruggeven
 
 # ─── 5) Routes ──────────────────────────────────────────────────────────
 
@@ -116,6 +127,9 @@ Nieuwe HTML:
             messages=[{"role": "user", "content": html_prompt}],
             temperature=0
         ).choices[0].message.content.strip()
+
+        # Valideer en fix de gegenereerde HTML
+        html = validate_and_fix_html(html)
 
         # ── Opslaan in Supabase (preview only) ────────────────────────
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
