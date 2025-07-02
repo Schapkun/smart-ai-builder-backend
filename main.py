@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import os
 import sys
 import json
-from bs4 import BeautifulSoup  # HTML validatie
+from bs4 import BeautifulSoup
 
 app = FastAPI()
 
@@ -25,7 +25,7 @@ app.add_middleware(
 
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-openai_key   = os.getenv("OPENAI_API_KEY")
+openai_key = os.getenv("OPENAI_API_KEY")
 
 if not supabase_url or not supabase_key:
     raise Exception("SUPABASE_URL en SUPABASE_SERVICE_ROLE moeten zijn ingesteld")
@@ -33,7 +33,7 @@ if not openai_key:
     raise Exception("OPENAI_API_KEY ontbreekt")
 
 supabase = create_client(supabase_url, supabase_key)
-openai   = OpenAI(api_key=openai_key)
+openai = OpenAI(api_key=openai_key)
 
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
@@ -45,16 +45,19 @@ class Message(BaseModel):
 class PromptRequest(BaseModel):
     prompt: str
     page_route: str
-    chat_history: list[Message]  # chatgeschiedenis
+    chat_history: list[Message]
 
 class PublishRequest(BaseModel):
     version_id: str
 
+class InitRequest(BaseModel):
+    html: str
+    page_route: str
+
 def validate_and_fix_html(html: str) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
-        fixed_html = str(soup)
-        return fixed_html
+        return str(soup)
     except Exception as e:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
         return html
@@ -66,18 +69,18 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
     try:
         result = supabase.table("versions") \
-                         .select("html_preview", "html_live") \
-                         .eq("page_route", req.page_route) \
-                         .order("timestamp", desc=True) \
-                         .limit(1) \
-                         .execute()
+            .select("html_preview", "html_live") \
+            .eq("page_route", req.page_route) \
+            .order("timestamp", desc=True) \
+            .limit(1) \
+            .execute()
 
         current_html = "<html><body><div>Welkom</div></body></html>"
         if result.data and isinstance(result.data, list):
             latest = result.data[0]
-            if "html_preview" in latest and latest["html_preview"]:
+            if latest.get("html_preview"):
                 current_html = latest["html_preview"]
-            elif "html_live" in latest and latest["html_live"]:
+            elif latest.get("html_live"):
                 current_html = latest["html_live"]
 
         system_message = {
@@ -92,11 +95,9 @@ async def handle_prompt(req: PromptRequest, request: Request):
             )
         }
 
-        messages = [system_message]
-        if req.chat_history:
-            for msg in req.chat_history:
-                messages.append({"role": msg.role, "content": msg.content})
-        messages.append({"role": "user", "content": req.prompt})
+        messages = [system_message] + [
+            {"role": msg.role, "content": msg.content} for msg in req.chat_history
+        ] + [{"role": "user", "content": req.prompt}]
 
         explanation_prompt = (
             "Beantwoord vriendelijk en duidelijk.\n"
@@ -110,11 +111,11 @@ async def handle_prompt(req: PromptRequest, request: Request):
         ).choices[0].message.content.strip()
 
         action_keywords = ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak", "stel in", "kleur", "toon"]
-        if any(keyword in req.prompt.lower() for keyword in action_keywords):
+        if any(k in req.prompt.lower() for k in action_keywords):
             html_prompt_text = (
                 "Je krijgt hieronder de huidige volledige HTML.\n"
                 "Pas deze HTML volledig aan volgens het gebruikersverzoek.\n"
-                "Geef alleen de volledige nieuwe HTML terug, zonder extra uitleg of codevoorbeelden.\n\n"
+                "Geef alleen de volledige nieuwe HTML terug, zonder uitleg of voorbeeldcode.\n\n"
                 f"Huidige HTML:\n{current_html}\n\n"
                 f"Gebruikersverzoek:\n{req.prompt}\n\n"
                 "Nieuwe volledige HTML:\n"
@@ -136,7 +137,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "generated_by": "AI v3"
         }
 
-        if html is not None:
+        if html:
             supabase.table("versions").insert({
                 "prompt": req.prompt,
                 "html_preview": html,
@@ -161,10 +162,10 @@ async def handle_prompt(req: PromptRequest, request: Request):
 async def publish_version(req: PublishRequest):
     try:
         version = supabase.table("versions") \
-                          .select("html_preview") \
-                          .eq("id", req.version_id) \
-                          .single() \
-                          .execute()
+            .select("html_preview") \
+            .eq("id", req.version_id) \
+            .single() \
+            .execute()
 
         if not version.data:
             return JSONResponse(status_code=404, content={"error": "Versie niet gevonden"})
@@ -172,12 +173,29 @@ async def publish_version(req: PublishRequest):
         html_to_publish = version.data["html_preview"]
 
         supabase.table("versions") \
-                .update({"html_live": html_to_publish}) \
-                .eq("id", req.version_id) \
-                .execute()
+            .update({"html_live": html_to_publish}) \
+            .eq("id", req.version_id) \
+            .execute()
 
         return {"message": "Live versie succesvol gepubliceerd."}
 
     except Exception as e:
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
+
+@app.post("/init")
+async def init_html(req: InitRequest):
+    try:
+        html = validate_and_fix_html(req.html)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        supabase.table("versions").insert({
+            "prompt": "init",
+            "html_preview": html,
+            "page_route": req.page_route,
+            "timestamp": timestamp,
+            "supabase_instructions": json.dumps({"message": "Initiale HTML toegevoegd"}),
+        }).execute()
+        return {"message": "HTML preview succesvol opgeslagen als startpunt."}
+    except Exception as e:
+        print("❌ ERROR in /init:", str(e), file=sys.stderr)
+        return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
