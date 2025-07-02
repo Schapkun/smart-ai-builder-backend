@@ -113,12 +113,18 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
         )
 
+        # ✅ LOGGING VOOR EXPLANATION
+        print("📨 Verstuurde messages naar OpenAI (uitleg):", json.dumps(messages + [{"role": "system", "content": explanation_prompt}], indent=2), file=sys.stderr)
+
         try:
             explanation = openai.chat.completions.create(
                 model="gpt-4",
                 messages=messages + [{"role": "system", "content": explanation_prompt}],
                 temperature=0.4,
             ).choices[0].message.content.strip()
+
+            print("✅ AI uitleg gegenereerd:", explanation, file=sys.stderr)
+
         except Exception as e:
             print("❌ ERROR AI uitleg generatie:", str(e), file=sys.stderr)
             return JSONResponse(status_code=500, content={"error": "AI uitleg kon niet worden gegenereerd."})
@@ -135,12 +141,19 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 f"Gebruikersverzoek:\n{req.prompt}\n\n"
                 "Nieuwe volledige HTML:\n"
             )
+
+            # ✅ LOGGING VOOR HTML
+            print("📨 Verstuurde messages naar OpenAI (HTML):", json.dumps(messages + [{"role": "system", "content": html_prompt_text}], indent=2), file=sys.stderr)
+
             try:
                 html = openai.chat.completions.create(
                     model="gpt-4",
                     messages=messages + [{"role": "system", "content": html_prompt_text}],
                     temperature=0,
                 ).choices[0].message.content.strip()
+
+                print("✅ AI HTML gegenereerd", file=sys.stderr)
+
             except Exception as e:
                 print("❌ ERROR AI HTML generatie:", str(e), file=sys.stderr)
                 return JSONResponse(status_code=500, content={"error": "AI HTML kon niet worden gegenereerd."})
@@ -162,7 +175,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 "supabase_instructions": json.dumps(instructions),
             }).execute()
         else:
-            print("ℹ️ Geen nieuwe HTML gegenereerd, geen versie opgeslagen.")
+            print("ℹ️ Geen nieuwe HTML gegenereerd, geen versie opgeslagen.", file=sys.stderr)
 
         return {
             "html": html,
@@ -225,7 +238,6 @@ async def init_html(req: InitRequest):
 @app.get("/preview/{page_route}")
 async def get_html_preview(page_route: str):
     try:
-        # OVERRIDE page_route met "homepage"
         fixed_route = "homepage"
 
         result = supabase.table("versions") \
