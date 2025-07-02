@@ -65,7 +65,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        # Haal de laatste live versie op voor de specifieke page_route
         result = supabase.table("versions") \
                          .select("html_live") \
                          .eq("page_route", req.page_route) \
@@ -77,7 +76,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if result.data and isinstance(result.data, list) and "html_live" in result.data[0]:
             current_html = result.data[0]["html_live"]
 
-        # Striktere system prompt om enkel HTML terug te geven bij wijziging
         system_message = {
             "role": "system",
             "content": (
@@ -107,7 +105,8 @@ async def handle_prompt(req: PromptRequest, request: Request):
             temperature=0.4,
         ).choices[0].message.content.strip()
 
-        if any(keyword in req.prompt.lower() for keyword in ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak"]):
+        action_keywords = ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak", "stel in", "kleur", "toon"]
+        if any(keyword in req.prompt.lower() for keyword in action_keywords):
             html_prompt_text = (
                 "Je krijgt hieronder de huidige volledige HTML.\n"
                 "Pas deze HTML volledig aan volgens het gebruikersverzoek.\n"
