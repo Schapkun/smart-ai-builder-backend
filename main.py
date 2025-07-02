@@ -1,5 +1,3 @@
-# File: main.py
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -45,7 +43,6 @@ print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 # ─── 4) Models ──────────────────────────────────────────────────────────
 class PromptRequest(BaseModel):
     prompt: str
-    page_route: str  # nieuw toegevoegd veld
 
 class PublishRequest(BaseModel):
     version_id: str
@@ -129,7 +126,6 @@ Nieuwe HTML:
         supabase.table("versions").insert({
             "prompt": req.prompt,
             "html_preview": html,
-            "page_route": req.page_route,          # <-- nieuw toegevoegd
             "timestamp": timestamp,
             "supabase_instructions": json.dumps(instructions),
         }).execute()
