@@ -45,7 +45,7 @@ class Message(BaseModel):
 class PromptRequest(BaseModel):
     prompt: str
     page_route: str
-    chat_history: list[Message]  # Nieuw: hele chatgeschiedenis
+    chat_history: list[Message]  # chatgeschiedenis
 
 class PublishRequest(BaseModel):
     version_id: str
@@ -65,9 +65,10 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        # Haal de laatste live versie op
+        # Haal de laatste live versie op voor de specifieke page_route
         result = supabase.table("versions") \
                          .select("html_live") \
+                         .eq("page_route", req.page_route) \
                          .order("timestamp", desc=True) \
                          .limit(1) \
                          .execute()
@@ -87,16 +88,13 @@ async def handle_prompt(req: PromptRequest, request: Request):
             )
         }
 
-        # Voeg laatste user prompt toe als aparte message (voor overzicht)
-        user_message = {"role": "user", "content": req.prompt}
-
-        # Bouw volledige chatgeschiedenis voor OpenAI
+        # Bouw volledige chatgeschiedenis voor OpenAI, met system message voor context
         messages = [system_message]
         if req.chat_history:
             for msg in req.chat_history:
                 messages.append({"role": msg.role, "content": msg.content})
-        # Voeg de nieuwste user prompt (kan dubbel zijn, maar is ok)
-        messages.append(user_message)
+        # Voeg nieuwste prompt toe
+        messages.append({"role": "user", "content": req.prompt})
 
         # Genereer uitleg / feedback
         explanation_prompt = (
@@ -110,24 +108,27 @@ async def handle_prompt(req: PromptRequest, request: Request):
             temperature=0.4,
         ).choices[0].message.content.strip()
 
-        # Genereer nieuwe HTML versie
-        html_prompt_text = (
-            "Pas onderstaande HTML aan volgens de gebruikersverzoeken.\n"
-            "Geef alleen de volledige nieuwe HTML terug.\n\n"
-            f"Huidige HTML:\n{current_html}\n\n"
-            f"Gebruikersverzoek:\n{req.prompt}\n\nNieuwe HTML:\n"
-        )
+        # Genereer nieuwe HTML versie alleen bij wijziging
+        if any(keyword in req.prompt.lower() for keyword in ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak"]):
+            html_prompt_text = (
+                "Pas onderstaande HTML aan volgens de gebruikersverzoeken.\n"
+                "Geef alleen de volledige nieuwe HTML terug.\n\n"
+                f"Huidige HTML:\n{current_html}\n\n"
+                f"Gebruikersverzoek:\n{req.prompt}\n\nNieuwe HTML:\n"
+            )
 
-        html = openai.chat.completions.create(
-            model="gpt-4",
-            messages=messages + [{"role": "system", "content": html_prompt_text}],
-            temperature=0,
-        ).choices[0].message.content.strip()
+            html = openai.chat.completions.create(
+                model="gpt-4",
+                messages=messages + [{"role": "system", "content": html_prompt_text}],
+                temperature=0,
+            ).choices[0].message.content.strip()
 
-        # Valideer en fix de HTML
-        html = validate_and_fix_html(html)
+            # Valideer en fix de HTML
+            html = validate_and_fix_html(html)
+        else:
+            html = None  # Geen nieuwe HTML bij alleen advies/vraag
 
-        # Sla op in Supabase
+        # Sla op in Supabase (preview only)
         timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         instructions = {
             "message": explanation,
