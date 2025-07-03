@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from openai import OpenAI
 from supabase import create_client
 from datetime import datetime
-from zoneinfo import ZoneInfo  # ✅ toegevoegd
+from zoneinfo import ZoneInfo
 import os
 import sys
 import json
@@ -24,7 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ ENVIRONMENT VARS
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 openai_key = os.getenv("OPENAI_API_KEY")
@@ -40,7 +39,6 @@ openai = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
-# ✅ STRUCTURE
 class Message(BaseModel):
     role: str
     content: str
@@ -57,7 +55,6 @@ class InitRequest(BaseModel):
     html: str
     page_route: str
 
-# ✅ HELPER
 def validate_and_fix_html(html: str) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -66,7 +63,6 @@ def validate_and_fix_html(html: str) -> str:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
         return html
 
-# ✅ POST /prompt
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
     origin = request.headers.get("origin")
@@ -113,6 +109,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
         print("📨 Verstuurde messages naar OpenAI (uitleg):", json.dumps(messages + [{"role": "system", "content": explanation_prompt}], indent=2), file=sys.stderr)
 
+        explanation = ""
         try:
             explanation = openai.chat.completions.create(
                 model="gpt-4",
@@ -122,7 +119,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
             print("✅ AI uitleg gegenereerd:", explanation, file=sys.stderr)
         except Exception as e:
             print("❌ ERROR AI uitleg generatie:", str(e), file=sys.stderr)
-            return JSONResponse(status_code=500, content={"error": "AI uitleg kon niet worden gegenereerd."})
 
         action_keywords = ["verander", "pas aan", "voeg toe", "verwijder", "zet", "maak", "stel in", "kleur", "toon"]
         html = None
@@ -148,27 +144,23 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 print("✅ AI HTML gegenereerd", file=sys.stderr)
             except Exception as e:
                 print("❌ ERROR AI HTML generatie:", str(e), file=sys.stderr)
-                return JSONResponse(status_code=500, content={"error": "AI HTML kon niet worden gegenereerd."})
 
-            html = validate_and_fix_html(html)
+            html = validate_and_fix_html(html) if html else None
 
-        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")  # ✅ aangepast
+        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
 
         instructions = {
             "message": explanation,
             "generated_by": "AI v4"
         }
 
-        if html:
-            supabase.table("versions").insert({
-                "prompt": req.prompt,
-                "html_preview": html,
-                "page_route": fixed_route,
-                "timestamp": timestamp,
-                "supabase_instructions": json.dumps(instructions),
-            }).execute()
-        else:
-            print("ℹ️ Geen nieuwe HTML gegenereerd, geen versie opgeslagen.", file=sys.stderr)
+        supabase.table("versions").insert({
+            "prompt": req.prompt,
+            "html_preview": html if html else None,
+            "page_route": fixed_route,
+            "timestamp": timestamp,
+            "supabase_instructions": json.dumps(instructions),
+        }).execute()
 
         return {
             "html": html,
@@ -180,7 +172,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
         print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij verwerken prompt."})
 
-# ✅ POST /publish
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
     try:
@@ -205,12 +196,11 @@ async def publish_version(req: PublishRequest):
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
 
-# ✅ POST /init
 @app.post("/init")
 async def init_html(req: InitRequest):
     try:
         html = validate_and_fix_html(req.html)
-        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")  # ✅ aangepast
+        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
         supabase.table("versions").insert({
             "prompt": "init",
             "html_preview": html,
@@ -223,7 +213,6 @@ async def init_html(req: InitRequest):
         print("❌ ERROR in /init:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
 
-# ✅ GET /preview/{page_route}
 @app.get("/preview/{page_route}")
 async def get_html_preview(page_route: str):
     try:
