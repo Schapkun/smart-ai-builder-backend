@@ -163,7 +163,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
         }).execute()
 
         return {
-            "html": html,
+            "html": html,  # 🔄 BELANGRIJK: frontend verwacht dit
             "version_timestamp": timestamp,
             "instructions": instructions
         }
