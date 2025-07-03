@@ -4,7 +4,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from openai import OpenAI
 from supabase import create_client
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo  # ✅ toegevoegd
 import os
 import sys
 import json
@@ -39,7 +40,6 @@ openai = OpenAI(api_key=openai_key)
 print("✅ SUPABASE_URL:", supabase_url, file=sys.stderr)
 print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
-
 # ✅ STRUCTURE
 class Message(BaseModel):
     role: str
@@ -57,7 +57,6 @@ class InitRequest(BaseModel):
     html: str
     page_route: str
 
-
 # ✅ HELPER
 def validate_and_fix_html(html: str) -> str:
     try:
@@ -66,7 +65,6 @@ def validate_and_fix_html(html: str) -> str:
     except Exception as e:
         print(f"❌ HTML validatie fout: {e}", file=sys.stderr)
         return html
-
 
 # ✅ POST /prompt
 @app.post("/prompt")
@@ -113,7 +111,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
         )
 
-        # ✅ LOGGING VOOR EXPLANATION
         print("📨 Verstuurde messages naar OpenAI (uitleg):", json.dumps(messages + [{"role": "system", "content": explanation_prompt}], indent=2), file=sys.stderr)
 
         try:
@@ -122,9 +119,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 messages=messages + [{"role": "system", "content": explanation_prompt}],
                 temperature=0.4,
             ).choices[0].message.content.strip()
-
             print("✅ AI uitleg gegenereerd:", explanation, file=sys.stderr)
-
         except Exception as e:
             print("❌ ERROR AI uitleg generatie:", str(e), file=sys.stderr)
             return JSONResponse(status_code=500, content={"error": "AI uitleg kon niet worden gegenereerd."})
@@ -142,7 +137,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 "Nieuwe volledige HTML:\n"
             )
 
-            # ✅ LOGGING VOOR HTML
             print("📨 Verstuurde messages naar OpenAI (HTML):", json.dumps(messages + [{"role": "system", "content": html_prompt_text}], indent=2), file=sys.stderr)
 
             try:
@@ -151,16 +145,15 @@ async def handle_prompt(req: PromptRequest, request: Request):
                     messages=messages + [{"role": "system", "content": html_prompt_text}],
                     temperature=0,
                 ).choices[0].message.content.strip()
-
                 print("✅ AI HTML gegenereerd", file=sys.stderr)
-
             except Exception as e:
                 print("❌ ERROR AI HTML generatie:", str(e), file=sys.stderr)
                 return JSONResponse(status_code=500, content={"error": "AI HTML kon niet worden gegenereerd."})
 
             html = validate_and_fix_html(html)
 
-        timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")  # ✅ aangepast
+
         instructions = {
             "message": explanation,
             "generated_by": "AI v4"
@@ -187,7 +180,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
         print("❌ ERROR in /prompt route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij verwerken prompt."})
 
-
 # ✅ POST /publish
 @app.post("/publish")
 async def publish_version(req: PublishRequest):
@@ -209,18 +201,16 @@ async def publish_version(req: PublishRequest):
             .execute()
 
         return {"message": "Live versie succesvol gepubliceerd."}
-
     except Exception as e:
         print("❌ ERROR in /publish:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Publicatie mislukt"})
-
 
 # ✅ POST /init
 @app.post("/init")
 async def init_html(req: InitRequest):
     try:
         html = validate_and_fix_html(req.html)
-        timestamp = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")  # ✅ aangepast
         supabase.table("versions").insert({
             "prompt": "init",
             "html_preview": html,
@@ -233,13 +223,11 @@ async def init_html(req: InitRequest):
         print("❌ ERROR in /init:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Initialisatie mislukt"})
 
-
 # ✅ GET /preview/{page_route}
 @app.get("/preview/{page_route}")
 async def get_html_preview(page_route: str):
     try:
         fixed_route = "homepage"
-
         result = supabase.table("versions") \
                          .select("html_preview") \
                          .eq("page_route", fixed_route) \
@@ -251,7 +239,6 @@ async def get_html_preview(page_route: str):
             return JSONResponse(status_code=404, content={"error": "Geen preview-versie gevonden."})
 
         return {"html": result.data[0]["html_preview"]}
-
     except Exception as e:
         print("❌ ERROR in /preview route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij ophalen preview."})
