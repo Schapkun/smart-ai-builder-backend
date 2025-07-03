@@ -82,7 +82,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             .limit(1) \
             .execute()
 
-        current_html = "<html><body><div>Welkom</div></body></html>"
+        current_html = "<html><body><div>Welkom op de testpagina van Mike</div></body></html>"
         if result.data and isinstance(result.data, list):
             latest = result.data[0]
             if latest.get("html_preview"):
