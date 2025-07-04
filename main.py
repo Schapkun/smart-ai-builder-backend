@@ -154,16 +154,19 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "generated_by": "AI v4"
         }
 
-        supabase.table("versions").insert({
-            "prompt": req.prompt,
-            "html_preview": html if html else None,
-            "page_route": fixed_route,
-            "timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
-        }).execute()
+        try:
+            supabase.table("versions").insert({
+                "prompt": req.prompt,
+                "html_preview": html if html else None,
+                "page_route": fixed_route,
+                "timestamp": timestamp,
+                "supabase_instructions": json.dumps(instructions),
+            }).execute()
+        except Exception as e:
+            print("❌ Fout bij insert naar Supabase:", str(e), file=sys.stderr)
 
         return {
-            "html": html,  # 🔄 BELANGRIJK: frontend verwacht dit
+            "html": html,
             "version_timestamp": timestamp,
             "instructions": instructions
         }
