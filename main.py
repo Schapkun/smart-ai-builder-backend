@@ -225,3 +225,35 @@ async def get_html_preview(page_route: str):
     except Exception as e:
         print("❌ ERROR in /preview route:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij ophalen preview."})
+
+@app.post("/clone-live-to-preview")
+async def clone_live_to_preview():
+    try:
+        fixed_route = "homepage"
+
+        result = supabase.table("versions") \
+            .select("html_live") \
+            .eq("page_route", fixed_route) \
+            .order("timestamp", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if not result.data or not result.data[0].get("html_live"):
+            return JSONResponse(status_code=404, content={"error": "Geen live versie gevonden."})
+
+        html_live = result.data[0]["html_live"]
+
+        timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
+
+        supabase.table("versions").insert({
+            "prompt": "Live naar preview gekopieerd",
+            "html_preview": html_live,
+            "page_route": fixed_route,
+            "timestamp": timestamp,
+            "supabase_instructions": json.dumps({"message": "Gekopieerd vanaf live versie"}),
+        }).execute()
+
+        return {"message": "Live versie succesvol gekopieerd naar preview."}
+    except Exception as e:
+        print("❌ ERROR in /clone-live-to-preview:", str(e), file=sys.stderr)
+        return JSONResponse(status_code=500, content={"error": "Kopie mislukt."})
