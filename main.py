@@ -104,7 +104,8 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
         explanation_prompt = (
             "Beantwoord vriendelijk en duidelijk.\n"
-            "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast."
+            "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast.\n"
+            "Geef GEEN HTML terug in dit antwoord."
         )
 
         print("📨 Verstuurde messages naar OpenAI (uitleg):", json.dumps(messages + [{"role": "system", "content": explanation_prompt}], indent=2), file=sys.stderr)
@@ -153,17 +154,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "message": explanation,
             "generated_by": "AI v4"
         }
-
-        if html is not None:
-            supabase.table("versions").insert({
-                "prompt": req.prompt,
-                "html_preview": html,
-                "page_route": fixed_route,
-                "timestamp": timestamp,
-                "supabase_instructions": json.dumps(instructions),
-            }).execute()
-        else:
-            print("⏭ Geen HTML wijziging gedetecteerd, versie wordt niet opgeslagen.", file=sys.stderr)
 
         return {
             "html": html,
