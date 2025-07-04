@@ -154,15 +154,16 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "generated_by": "AI v4"
         }
 
-        supabase_entry = {
-            "prompt": req.prompt,
-            "html_preview": html if html else "",
-            "page_route": fixed_route,
-            "timestamp": timestamp,
-            "supabase_instructions": json.dumps(instructions),
-        }
-
-        supabase.table("versions").insert(supabase_entry).execute()
+        if html is not None:
+            supabase.table("versions").insert({
+                "prompt": req.prompt,
+                "html_preview": html,
+                "page_route": fixed_route,
+                "timestamp": timestamp,
+                "supabase_instructions": json.dumps(instructions),
+            }).execute()
+        else:
+            print("⏭ Geen HTML wijziging gedetecteerd, versie wordt niet opgeslagen.", file=sys.stderr)
 
         return {
             "html": html,
