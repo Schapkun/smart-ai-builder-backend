@@ -103,8 +103,9 @@ async def handle_prompt(req: PromptRequest, request: Request):
         ] + [{"role": "user", "content": req.prompt}]
 
         explanation_prompt = (
-            "Beantwoord vriendelijk en duidelijk.\n"
-            "Als het een wijziging betreft, geef in 1 zin aan wat er is aangepast.\n"
+            "Vat het verzoek van de gebruiker bondig samen in 1 zin, alsof je uitlegt wat je gaat doen.\n"
+            "Zeg bijvoorbeeld: 'Ik ga de titel groen maken op de homepage'.\n"
+            "Vermijd zinnen alsof je de wijziging al hebt gedaan.\n"
             "Geef GEEN HTML terug in dit antwoord."
         )
 
