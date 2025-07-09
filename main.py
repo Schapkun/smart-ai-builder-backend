@@ -1,3 +1,4 @@
+```python
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,8 +9,9 @@ from zoneinfo import ZoneInfo
 import os
 import sys
 import json
-import requests
-import base64
+
+# import commit util (handles GH_PAT internally)
+from commit_to_github import commit_file_to_github
 
 app = FastAPI()
 
@@ -24,17 +26,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# OpenAI key
 openai_key = os.getenv("OPENAI_API_KEY")
 if not openai_key:
     raise Exception("OPENAI_API_KEY ontbreekt")
+
 openai = OpenAI(api_key=openai_key)
-
-github_token = os.getenv("GH_PAT")
-if not github_token:
-    raise Exception("GH_PAT ontbreekt")
-
-REPO = "Schapkun/agent-action-atlas"
-BRANCH = "main"
+print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
 
 class Message(BaseModel):
     role: str
@@ -45,39 +43,19 @@ class PromptRequest(BaseModel):
     chat_history: list[Message]
     page_route: str = "homepage"
 
-class PublishRequest(BaseModel):
-    files: list[dict]
-    message: str
-
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
     origin = request.headers.get("origin")
-    print("\U0001f310 Inkomend verzoek van origin:", origin, file=sys.stderr)
+    print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        path = f"preview_version/{req.page_route}.tsx"
-        headers = {
-            "Authorization": f"Bearer {github_token}",
-            "Accept": "application/vnd.github+json"
-        }
-        file_url = f"https://api.github.com/repos/{REPO}/contents/{path}"
-        file_response = requests.get(file_url, headers=headers)
-        if file_response.status_code != 200:
-            print(f"⚠️ Bestand niet gevonden: {path}", file=sys.stderr)
-            return JSONResponse(status_code=404, content={"error": "Bestand niet gevonden", "path": path})
-
-        file_data = file_response.json()
-        file_content = base64.b64decode(file_data["content"]).decode("utf-8")
-        sha = file_data["sha"]
-
         system_message = {
             "role": "system",
             "content": (
-                f"Je bent een AI die gebruikers helpt met uitleg en codewijzigingen."
-                f" Hier is de huidige inhoud van het bestand {path}:\n\n{file_content}\n\n"
-                "Indien de gebruiker vraagt om een wijziging, geef dan een geldige JSON array terug zoals:"
-                '[{"path": "preview_version/homepage.tsx", "content": "nieuwebestandinhoud"}].'
-                " Als er geen wijziging nodig is, geef dan alleen uitleg terug."
+                "Je bent een AI die gebruikers helpt met uitleg en codewijzigingen."
+                " Indien er code gewijzigd moet worden, geef dan een geldige JSON array terug met objecten met 'path' en 'content'."
+                " Als er geen wijzigingen nodig zijn, retourneer alleen uitleg zonder JSON-structuur."
+                f" Het relevante bestand voor deze prompt is: {req.page_route}"
             )
         }
 
@@ -85,84 +63,69 @@ async def handle_prompt(req: PromptRequest, request: Request):
             {"role": msg.role, "content": msg.content} for msg in req.chat_history
         ] + [{"role": "user", "content": req.prompt}]
 
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-4",
-                messages=messages,
-                temperature=0.3,
-            )
-            raw_content = response.choices[0].message.content.strip()
-        except Exception as e:
-            print("❌ ERROR code generatie:", str(e), file=sys.stderr)
-            return JSONResponse(status_code=500, content={"error": "AI-output mislukt."})
+        # Genereer AI antwoord met detectie van wijzigingen
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            temperature=0.3,
+        )
+        raw = response.choices[0].message.content.strip()
 
-        explanation = raw_content
+        explanation = raw
         files = []
         has_changes = False
-
         try:
-            parsed = json.loads(raw_content)
+            parsed = json.loads(raw)
             if isinstance(parsed, list):
                 files = parsed
                 has_changes = True
                 explanation = "Ik heb een wijziging voorbereid."
         except json.JSONDecodeError:
+            # gewoon uitleg
             pass
 
         timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
-
         return {
             "version_timestamp": timestamp,
             "instructions": {
                 "message": explanation,
-                "generated_by": "AI v8",
+                "generated_by": "AI v7",
                 "files_changed": [f["path"] for f in files] if has_changes else [],
                 "hasChanges": has_changes,
                 "html": "" if not has_changes else None
             },
             "files": files if has_changes else [],
-            "page_route": req.page_route,
-            "sha": sha
+            "page_route": req.page_route
         }
 
     except Exception as e:
         print("❌ Interne fout:", str(e), file=sys.stderr)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Interne fout bij promptverwerking."})
 
-@app.post("/publish")
-async def publish_changes(req: PublishRequest):
+@app.post("/implement")
+async def implement_changes(request: Request):
     try:
-        for file in req.files:
-            path = file["path"]
-            content = file["content"]
+        payload = await request.json()
+        files = payload.get("files", [])
 
-            get_url = f"https://api.github.com/repos/{REPO}/contents/{path}"
-            headers = {
-                "Authorization": f"Bearer {github_token}",
-                "Accept": "application/vnd.github+json"
-            }
+        # Commit util haalt GH_PAT zelf op
+        for file in files:
+            path = file.get("path", "").strip()
+            content = file.get("content", "")
+            if not path or not content:
+                continue
+            try:
+                commit_file_to_github(
+                    html_content=content,
+                    path=f"preview_version/{path}",
+                    commit_message=f"AI wijziging aan {path} via implementatie"
+                )
+            except Exception as e:
+                print(f"❌ Commit mislukt voor {path}:", str(e), file=sys.stderr)
+                return JSONResponse(status_code=500, content={"error": f"Implementatie mislukt voor {path}"})
 
-            # Huidige SHA ophalen
-            sha_resp = requests.get(get_url, headers=headers)
-            if sha_resp.status_code != 200:
-                raise Exception(f"Bestand {path} niet gevonden bij publiceren")
-            sha = sha_resp.json()["sha"]
-
-            put_resp = requests.put(
-                get_url,
-                headers=headers,
-                json={
-                    "message": req.message,
-                    "content": base64.b64encode(content.encode()).decode(),
-                    "branch": BRANCH,
-                    "sha": sha
-                }
-            )
-            if put_resp.status_code not in [200, 201]:
-                raise Exception(f"Fout bij committen: {put_resp.text}")
-
-        return {"status": "success", "message": "Bestanden zijn gepubliceerd naar GitHub."}
-
+        return {"status": "success", "message": "Wijzigingen succesvol doorgevoerd."}
     except Exception as e:
-        print("❌ Publicatiefout:", str(e), file=sys.stderr)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        print("❌ Commit implementatie fout:", str(e), file=sys.stderr)
+        return JSONResponse(status_code=500, content={"error": "Implementatie mislukt."})
+```
