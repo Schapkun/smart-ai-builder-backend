@@ -45,10 +45,14 @@ class PromptRequest(BaseModel):
     chat_history: list[Message]
     page_route: str = "homepage"
 
+class PublishRequest(BaseModel):
+    files: list[dict]
+    message: str
+
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
     origin = request.headers.get("origin")
-    print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
+    print("\U0001f310 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
         path = f"preview_version/{req.page_route}.tsx"
@@ -123,4 +127,42 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
     except Exception as e:
         print("❌ Interne fout:", str(e), file=sys.stderr)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/publish")
+async def publish_changes(req: PublishRequest):
+    try:
+        for file in req.files:
+            path = file["path"]
+            content = file["content"]
+
+            get_url = f"https://api.github.com/repos/{REPO}/contents/{path}"
+            headers = {
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github+json"
+            }
+
+            # Huidige SHA ophalen
+            sha_resp = requests.get(get_url, headers=headers)
+            if sha_resp.status_code != 200:
+                raise Exception(f"Bestand {path} niet gevonden bij publiceren")
+            sha = sha_resp.json()["sha"]
+
+            put_resp = requests.put(
+                get_url,
+                headers=headers,
+                json={
+                    "message": req.message,
+                    "content": base64.b64encode(content.encode()).decode(),
+                    "branch": BRANCH,
+                    "sha": sha
+                }
+            )
+            if put_resp.status_code not in [200, 201]:
+                raise Exception(f"Fout bij committen: {put_resp.text}")
+
+        return {"status": "success", "message": "Bestanden zijn gepubliceerd naar GitHub."}
+
+    except Exception as e:
+        print("❌ Publicatiefout:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": str(e)})
