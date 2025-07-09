@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import os
 import sys
 import json
-from commit_to_github import commit_file_to_github  # ✅ toegevoegd voor GitHub commits
+from commit_to_github import commit_file_to_github  # ✅ aangepast om gebruik te maken van env key
 
 app = FastAPI()
 
@@ -58,6 +58,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
         if not file_path:
             return JSONResponse(status_code=400, content={"error": "Geen bestandsnaam opgegeven."})
 
+        # ✅ Systemprompt voor volledige bestandsgeneratie
         system_message = {
             "role": "system",
             "content": (
@@ -93,6 +94,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             print("❌ ERROR AI code generatie:", str(e), file=sys.stderr)
             return JSONResponse(status_code=500, content={"error": "AI gegenereerde code mislukt."})
 
+        # ✅ Wegschrijven naar GitHub
         try:
             commit_file_to_github(
                 html_content=generated_code,
