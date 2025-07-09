@@ -1,7 +1,42 @@
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from openai import OpenAI
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import os
+import sys
+import json
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://smart-ai-builder-frontend.onrender.com",
+        "https://meester.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+openai_key = os.getenv("OPENAI_API_KEY")
+if not openai_key:
+    raise Exception("OPENAI_API_KEY ontbreekt")
+
+openai = OpenAI(api_key=openai_key)
+print("✅ OPENAI_API_KEY:", (openai_key[:5] + "..."), file=sys.stderr)
+
+class Message(BaseModel):
+    role: str
+    content: str
+
 class PromptRequest(BaseModel):
     prompt: str
     chat_history: list[Message]
-    page_route: str = "homepage"  # <-- toegevoegde regel
+    page_route: str = "homepage"  # <-- toegevoegd
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
@@ -60,7 +95,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 "html": "" if not has_changes else None
             },
             "files": files if has_changes else [],
-            "page_route": req.page_route  # <-- optioneel ter bevestiging
+            "page_route": req.page_route  # optioneel
         }
 
     except Exception as e:
