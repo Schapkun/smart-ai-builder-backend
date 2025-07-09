@@ -59,11 +59,12 @@ async def handle_prompt(req: PromptRequest, request: Request):
             )
         }
 
-        messages = [system_message] + [
-            {"role": msg.role, "content": msg.content} for msg in req.chat_history
-        ] + [{"role": "user", "content": req.prompt}]
+        # ⛔ Tijdelijke hardcoded prompt ter debug
+        messages = [
+            system_message,
+            {"role": "user", "content": "Verander de achtergrondkleur in 'pages/index.tsx' naar zwart."}
+        ]
 
-        # 🔍 Verkorte uitleg ophalen
         explanation = ""
         try:
             explanation_resp = openai.chat.completions.create(
@@ -75,7 +76,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
         except Exception as e:
             print("❌ ERROR uitleg:", str(e), file=sys.stderr)
 
-        # 🧠 Code ophalen
         try:
             response = openai.chat.completions.create(
                 model="gpt-4",
@@ -107,7 +107,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 commit_file_to_github(
                     html_content=content,
                     path=f"preview_version/{path}",
-                    commit_message=f"AI wijziging aan {path} via prompt"
+                    commit_message=f"AI wijziging aan {path} via testprompt"
                 )
             except Exception as e:
                 print(f"❌ Commit mislukt voor {path}:", str(e), file=sys.stderr)
@@ -119,7 +119,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             "version_timestamp": timestamp,
             "instructions": {
                 "message": explanation,
-                "generated_by": "AI v6",
+                "generated_by": "AI testmode",
                 "files_changed": [file["path"] for file in files if "path" in file]
             }
         }
