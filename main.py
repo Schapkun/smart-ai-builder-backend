@@ -36,6 +36,7 @@ class Message(BaseModel):
 class PromptRequest(BaseModel):
     prompt: str
     chat_history: list[Message]
+    page_route: str = "index"  # default fallback
 
 @app.post("/prompt")
 async def handle_prompt(req: PromptRequest, request: Request):
@@ -43,12 +44,26 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
+        # ⬇️ Laad huidige code uit het juiste bestand
+        filename = f"preview_version/{req.page_route}.tsx"
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                current_code = f.read()
+        except FileNotFoundError:
+            current_code = ""
+            print(f"⚠️ Bestand niet gevonden: {filename}", file=sys.stderr)
+
         system_message = {
             "role": "system",
             "content": (
-                "Je bent een AI die gebruikers helpt met uitleg en codewijzigingen."
-                " Indien er code gewijzigd moet worden, geef dan een geldige JSON array terug met objecten met 'path' en 'content'."
-                " Als er geen wijzigingen nodig zijn, retourneer alleen uitleg zonder JSON-structuur."
+                "Je bent een AI die codebestanden aanpast op basis van gebruikersinstructies.\n"
+                "Hieronder zie je de huidige inhoud van het bestand:\n\n"
+                f"{current_code}\n\n"
+                "Als er een wijziging nodig is, retourneer dan een JSON array van objecten met 'path' en 'content'.\n"
+                f"Gebruik exact dit pad voor het bestand: '{req.page_route}.tsx'\n"
+                "Voorbeeld:\n"
+                "[{\"path\": \"Home.tsx\", \"content\": \"...volledige nieuwe inhoud...\"}]\n"
+                "Als er geen wijziging nodig is, geef dan alleen uitleg terug."
             )
         }
 
@@ -56,7 +71,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
             {"role": msg.role, "content": msg.content} for msg in req.chat_history
         ] + [{"role": "user", "content": req.prompt}]
 
-        # 🧠 Eerste AI-antwoord genereren (inclusief detectie of er wijzigingen zijn)
+        # 🧠 AI aanroepen
         try:
             response = openai.chat.completions.create(
                 model="gpt-4",
@@ -79,7 +94,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 has_changes = True
                 explanation = "Ik heb een wijziging voorbereid."
         except json.JSONDecodeError:
-            pass  # Geen geldige JSON, dus we behandelen het als uitleg/chat
+            pass  # AI gaf geen JSON, dus alleen uitleg
 
         timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
 
@@ -90,7 +105,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 "generated_by": "AI v7",
                 "files_changed": [f["path"] for f in files] if has_changes else [],
                 "hasChanges": has_changes,
-                "html": "" if not has_changes else None  # frontend gebruikt dit als trigger
+                "html": "" if not has_changes else None
             },
             "files": files if has_changes else []
         }
