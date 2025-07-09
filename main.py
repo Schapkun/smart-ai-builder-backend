@@ -9,12 +9,6 @@ import os
 import sys
 import json
 from commit_to_github import commit_file_to_github
-from supabase import create_client
-
-# ✅ Supabase setup
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-supabase = create_client(supabase_url, supabase_key)
 
 app = FastAPI()
 
@@ -69,16 +63,19 @@ async def handle_prompt(req: PromptRequest, request: Request):
             {"role": msg.role, "content": msg.content} for msg in req.chat_history
         ] + [{"role": "user", "content": req.prompt}]
 
+        # 🔍 Verkorte uitleg ophalen
         explanation = ""
         try:
-            explanation = openai.chat.completions.create(
+            explanation_resp = openai.chat.completions.create(
                 model="gpt-4",
-                messages=messages + [{"role": "system", "content": "Vat in 1 zin samen wat je hebt gedaan."}],
+                messages=messages + [{"role": "user", "content": "Vat in 1 zin samen wat je hebt gedaan."}],
                 temperature=0.4,
-            ).choices[0].message.content.strip()
+            )
+            explanation = explanation_resp.choices[0].message.content.strip()
         except Exception as e:
             print("❌ ERROR uitleg:", str(e), file=sys.stderr)
 
+        # 🧠 Code ophalen
         try:
             response = openai.chat.completions.create(
                 model="gpt-4",
@@ -89,6 +86,9 @@ async def handle_prompt(req: PromptRequest, request: Request):
         except Exception as e:
             print("❌ ERROR code generatie:", str(e), file=sys.stderr)
             return JSONResponse(status_code=500, content={"error": "AI-output mislukt."})
+
+        if not content_raw:
+            return JSONResponse(status_code=400, content={"error": "AI gaf geen inhoud terug."})
 
         try:
             files = json.loads(content_raw)
@@ -127,29 +127,3 @@ async def handle_prompt(req: PromptRequest, request: Request):
     except Exception as e:
         print("❌ Interne fout:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Interne fout bij promptverwerking."})
-
-@app.post("/restore")
-async def restore_version(request: Request):
-    data = await request.json()
-    version_id = data.get("version_id")
-
-    if not version_id:
-        return JSONResponse(status_code=400, content={"error": "version_id ontbreekt"})
-
-    try:
-        result = supabase.from_("versions").select("*").eq("id", version_id).single().execute()
-        version_data = result.data
-
-        if not version_data or not version_data.get("html_preview"):
-            return JSONResponse(status_code=404, content={"error": "Versie niet gevonden of geen preview HTML beschikbaar."})
-
-        commit_file_to_github(
-            html_content=version_data["html_preview"],
-            path=f"preview_version/{version_data.get('page_route') or 'index.html'}",
-            commit_message=f"🔁 Herstel naar eerdere versie ({version_id})"
-        )
-
-        return JSONResponse(content={"message": "Versie hersteld naar preview."})
-    except Exception as e:
-        print("❌ Fout bij herstellen versie:", str(e), file=sys.stderr)
-        return JSONResponse(status_code=500, content={"error": "Interne serverfout bij herstellen."})
