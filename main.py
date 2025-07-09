@@ -1,4 +1,3 @@
-```python
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -128,4 +127,3 @@ async def implement_changes(request: Request):
     except Exception as e:
         print("❌ Commit implementatie fout:", str(e), file=sys.stderr)
         return JSONResponse(status_code=500, content={"error": "Implementatie mislukt."})
-```
