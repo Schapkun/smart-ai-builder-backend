@@ -51,7 +51,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
     print("🌐 Inkomend verzoek van origin:", origin, file=sys.stderr)
 
     try:
-        # 🧾 Stap 1: lees huidige bestand van GitHub
         path = f"preview_version/{req.page_route}.tsx"
         headers = {
             "Authorization": f"Bearer {github_token}",
@@ -67,7 +66,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
         file_content = base64.b64decode(file_data["content"]).decode("utf-8")
         sha = file_data["sha"]
 
-        # 🧠 Stap 2: prompt genereren op basis van bestaande code
         system_message = {
             "role": "system",
             "content": (
