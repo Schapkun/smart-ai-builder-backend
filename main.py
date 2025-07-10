@@ -73,12 +73,16 @@ async def handle_prompt(req: PromptRequest, request: Request):
         explanation = raw
         files = []
         has_changes = False
+        html_snippet = ""
+
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
                 files = parsed
                 has_changes = True
                 explanation = "Ik heb een wijziging voorbereid."
+                if files and "content" in files[0]:
+                    html_snippet = files[0]["content"]
         except json.JSONDecodeError:
             # gewoon uitleg
             pass
@@ -91,7 +95,7 @@ async def handle_prompt(req: PromptRequest, request: Request):
                 "generated_by": "AI v7",
                 "files_changed": [f["path"] for f in files] if has_changes else [],
                 "hasChanges": has_changes,
-                "html": "" if not has_changes else None
+                "html": html_snippet if has_changes else ""
             },
             "files": files if has_changes else [],
             "page_route": req.page_route
