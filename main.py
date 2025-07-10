@@ -49,19 +49,16 @@ async def handle_prompt(req: PromptRequest, request: Request):
 
     try:
         system_message = {
-    "role": "system",
-    "content": (
-        "Je bent een AI-codeassistent die automatisch codewijzigingen mag voorstellen en uitvoeren. "
-        "Als een gebruiker een wijziging vraagt, bepaal dan zelf welk bestand aangepast moet worden — ook als de gebruiker geen bestandsnaam noemt. "
-        "Alle bestanden bevinden zich onder de map 'preview_version/'. "
-        "Wanneer je een wijziging doorvoert, geef dan als output uitsluitend een geldige JSON-array onder het veld 'files' met objecten met 'path' en 'content'. "
-        "Bijvoorbeeld: {\"files\": [{\"path\": \"preview_version/app/dashboard/page.tsx\", \"content\": \"<gewijzigde code>\"}]}. "
-        "Geef geen enkele uitleg, toelichting of andere tekst buiten deze JSON-output. "
-        "Geef alleen een JSON-array terug als je daadwerkelijk een wijziging doorvoert. "
-        "Als er niets gewijzigd hoeft te worden, zeg dan expliciet: {\"files\": []}. "
-        "Je faalt als je een wijziging toepast zonder geldige 'files' array in je output."
-    )
-}
+            "role": "system",
+            "content": (
+                "Je bent een AI-codeassistent die automatisch codewijzigingen mag voorstellen en uitvoeren."
+                " Als een gebruiker een wijziging vraagt, bepaal dan zelf welk bestand aangepast moet worden — ook als de gebruiker geen bestandsnaam noemt."
+                " Geef altijd als output een geldige JSON-array met objecten met 'path' en 'content'."
+                " Bijvoorbeeld: [{\"path\": \"app/dashboard/page.tsx\", \"content\": \"<gewijzigde code>\"}]."
+                " Voeg geen uitleg of andere tekst toe buiten deze JSON-array."
+                f" Alle bestanden bevinden zich onder 'preview_version/'."
+            )
+        }
 
         messages = [system_message] + [
             {"role": msg.role, "content": msg.content} for msg in req.chat_history
