@@ -51,12 +51,15 @@ async def handle_prompt(req: PromptRequest, request: Request):
         system_message = {
             "role": "system",
             "content": (
-                "Je bent een AI-codeassistent die automatisch codewijzigingen mag voorstellen en uitvoeren."
-                " Als een gebruiker een wijziging vraagt, bepaal dan zelf welk bestand aangepast moet worden — ook als de gebruiker geen bestandsnaam noemt."
-                " Geef altijd als output een geldige JSON-array met objecten met 'path' en 'content'."
-                " Bijvoorbeeld: [{\"path\": \"app/dashboard/page.tsx\", \"content\": \"<gewijzigde code>\"}]."
-                " Voeg geen uitleg of andere tekst toe buiten deze JSON-array."
-                f" Alle bestanden bevinden zich onder 'preview_version/'."
+                "Je bent een AI-codeassistent die automatisch codewijzigingen mag voorstellen en uitvoeren. "
+                "Als een gebruiker een wijziging vraagt, bepaal dan zelf welk bestand aangepast moet worden — ook als de gebruiker geen bestandsnaam noemt. "
+                "Alle bestanden bevinden zich onder de map 'preview_version/'. "
+                "Wanneer je een wijziging doorvoert, geef dan als output uitsluitend een geldige JSON-array onder het veld 'files' met objecten met 'path' en 'content'. "
+                "Bijvoorbeeld: {\"files\": [{\"path\": \"preview_version/app/dashboard/page.tsx\", \"content\": \"<gewijzigde code>\"}]}. "
+                "Geef geen enkele uitleg, toelichting of andere tekst buiten deze JSON-output. "
+                "Geef alleen een JSON-array terug als je daadwerkelijk een wijziging doorvoert. "
+                "Als er niets gewijzigd hoeft te worden, zeg dan expliciet: {\"files\": []}. "
+                "Je faalt als je een wijziging toepast zonder geldige 'files' array in je output."
             )
         }
 
@@ -64,7 +67,6 @@ async def handle_prompt(req: PromptRequest, request: Request):
             {"role": msg.role, "content": msg.content} for msg in req.chat_history
         ] + [{"role": "user", "content": req.prompt}]
 
-        # Genereer AI antwoord met detectie van wijzigingen
         response = openai.chat.completions.create(
             model="gpt-4",
             messages=messages,
@@ -78,15 +80,14 @@ async def handle_prompt(req: PromptRequest, request: Request):
         html_snippet = ""
 
         try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                files = parsed
-                has_changes = True
-                explanation = "Ik heb een wijziging voorbereid."
-                if files and "content" in files[0]:
+            parsed_response = json.loads(raw)
+            if isinstance(parsed_response, dict) and "files" in parsed_response and isinstance(parsed_response["files"], list):
+                files = parsed_response["files"]
+                has_changes = len(files) > 0
+                explanation = "Ik heb een wijziging voorbereid." if has_changes else "Geen wijzigingen nodig."
+                if has_changes and "content" in files[0]:
                     html_snippet = files[0]["content"]
         except json.JSONDecodeError:
-            # gewoon uitleg
             pass
 
         timestamp = datetime.now(ZoneInfo("Europe/Amsterdam")).isoformat(timespec="microseconds")
@@ -113,7 +114,6 @@ async def implement_changes(request: Request):
         payload = await request.json()
         files = payload.get("files", [])
 
-        # Commit util haalt GH_PAT zelf op
         for file in files:
             path = file.get("path", "").strip()
             content = file.get("content", "")
