@@ -51,10 +51,12 @@ async def handle_prompt(req: PromptRequest, request: Request):
         system_message = {
             "role": "system",
             "content": (
-                "Je bent een AI die gebruikers helpt met uitleg en codewijzigingen."
-                " Indien er code gewijzigd moet worden, geef dan een geldige JSON array terug met objecten met 'path' en 'content'."
-                " Als er geen wijzigingen nodig zijn, retourneer alleen uitleg zonder JSON-structuur."
-                f" Het relevante bestand voor deze prompt is: {req.page_route}"
+                "Je bent een AI-codeassistent die automatisch codewijzigingen mag voorstellen en uitvoeren."
+                " Als een gebruiker een wijziging vraagt, bepaal dan zelf welk bestand aangepast moet worden — ook als de gebruiker geen bestandsnaam noemt."
+                " Geef altijd als output een geldige JSON-array met objecten met 'path' en 'content'."
+                " Bijvoorbeeld: [{\"path\": \"app/dashboard/page.tsx\", \"content\": \"<gewijzigde code>\"}]."
+                " Voeg geen uitleg of andere tekst toe buiten deze JSON-array."
+                f" Alle bestanden bevinden zich onder 'preview_version/'."
             )
         }
 
