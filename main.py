@@ -74,6 +74,9 @@ async def handle_prompt(req: PromptRequest, request: Request):
         )
         raw = response.choices[0].message.content.strip()
 
+        # ✅ Log AI-output ongefilterd
+        print("🧠 AI output:", raw, file=sys.stderr)
+
         explanation = raw
         files = []
         has_changes = False
