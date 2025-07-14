@@ -17,7 +17,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://smart-ai-builder-frontend.onrender.com",
+        "https://preview-version-meester-77tq.onrender.com",
         "https://meester.app"
     ],
     allow_credentials=True,
@@ -123,11 +123,11 @@ async def implement_changes(request: Request):
             if not path or not content:
                 continue
             try:
-                commit_file_to_github(
-                    html_content=content,
-                    path=path,
-                    commit_message=f"AI wijziging aan {path} via implementatie"
-                )
+                full_path = os.path.join("preview_version", path.replace("preview_version/", ""))
+os.makedirs(os.path.dirname(full_path), exist_ok=True)
+with open(full_path, "w", encoding="utf-8") as f:
+    f.write(content)
+print(f"✅ Bestand overschreven: {full_path}", file=sys.stderr)
             except Exception as e:
                 print(f"❌ Commit mislukt voor {path}:", str(e), file=sys.stderr)
                 return JSONResponse(status_code=500, content={"error": f"Implementatie mislukt voor {path}"})
