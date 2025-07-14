@@ -125,7 +125,7 @@ async def implement_changes(request: Request):
             try:
                 commit_file_to_github(
                     html_content=content,
-                    path=f"preview_version/{path}",
+                    path=path,
                     commit_message=f"AI wijziging aan {path} via implementatie"
                 )
             except Exception as e:
