@@ -9,9 +9,6 @@ import os
 import sys
 import json
 
-# import commit util (handles GH_PAT internally)
-from commit_to_github import commit_file_to_github
-
 app = FastAPI()
 
 app.add_middleware(
