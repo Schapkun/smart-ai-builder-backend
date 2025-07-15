@@ -141,10 +141,9 @@ async def implement_changes(request: Request):
         return JSONResponse(status_code=500, content={"error": "Implementatie mislukt."})
 
 from fastapi.staticfiles import StaticFiles
-if not os.path.exists("/opt/render/project/src/preview_version"):
-    print("❌ Map /opt/render/project/src/preview_version bestaat niet!", file=sys.stderr)
+if os.path.exists("/opt/render/project/src/preview_version"):
+    print("✅ Map bestaat, mounten...", file=sys.stderr)
+    app.mount("/", StaticFiles(directory="/opt/render/project/src/preview_version", html=True), name="static")
 else:
-    print("✅ Map /opt/render/project/src/preview_version bestaat.", file=sys.stderr)
-
-app.mount("/", StaticFiles(directory="/opt/render/project/src/preview_version", html=True), name="static")
+    print("❌ Map bestaat niet, geen mount uitgevoerd!", file=sys.stderr)
 
