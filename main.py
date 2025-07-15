@@ -14,9 +14,8 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://preview-version-meester-77tq.onrender.com",
         "https://preview-version-meester.onrender.com",
-        "https://meester.app"
+        "https://www.meester.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
