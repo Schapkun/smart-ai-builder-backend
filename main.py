@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles  # <-- toevoegen
 from pydantic import BaseModel
 from openai import OpenAI
 from datetime import datetime
@@ -141,4 +142,3 @@ async def implement_changes(request: Request):
 
 from fastapi.staticfiles import StaticFiles
 app.mount("/", StaticFiles(directory="/opt/render/project/src/preview_version", html=True), name="static")
-
