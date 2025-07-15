@@ -124,6 +124,7 @@ async def implement_changes(request: Request):
             try:
                 full_path = os.path.join("/opt/render/project/src/preview_version", path.replace("preview_version/", ""))
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                print(f"📍 Volledig pad waarop geschreven wordt: {full_path}", file=sys.stderr)
                 with open(full_path, "w", encoding="utf-8") as f:
                     f.write(content)
                 print(f"📄 Geüpdatet bestand: {full_path}", file=sys.stderr)
