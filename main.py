@@ -147,3 +147,7 @@ if os.path.exists("/opt/render/project/src/preview_version"):
 else:
     print("❌ Map bestaat niet, geen mount uitgevoerd!", file=sys.stderr)
 
+@app.get("/__cwd")
+def get_cwd():
+    import os
+    return {"cwd": os.getcwd()}
