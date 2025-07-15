@@ -122,7 +122,7 @@ async def implement_changes(request: Request):
                 continue
 
             try:
-                full_path = os.path.join("/opt/render/project/src/preview_version", path.replace("preview_version/", ""))
+                full_path = os.path.join("/opt/render/project/src", path.replace("preview_version/", ""))
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 with open(full_path, "w", encoding="utf-8") as f:
                     f.write(content)
