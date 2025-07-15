@@ -126,6 +126,8 @@ async def implement_changes(request: Request):
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 with open(full_path, "w", encoding="utf-8") as f:
                     f.write(content)
+                print(f"📄 Geüpdatet bestand: {full_path}", file=sys.stderr)
+                print(f"📄 Inhoud:\n{content[:500]}", file=sys.stderr)
                 print(f"✅ Bestand overschreven: {full_path}", file=sys.stderr)
             except Exception as e:
                 print(f"❌ Commit mislukt voor {path}:", str(e), file=sys.stderr)
